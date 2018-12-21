@@ -22,7 +22,7 @@ H = VIEWPORT_H / SCALE
 CENTER_X = W/2
 CENTER_Y = H/2
 
-RACKETPOLY = [(-5,20),(+5,20),(+5,-20),(-5,-20)]
+RACKETPOLY = [(-5,20),(+5,20),(+5,-20),(-5,-20),(-13,-10),(-15,0),(-13,10)]
 
 FORCEMULIPLAYER = 5000
 TORQUEMULTIPLAYER = 100
@@ -81,6 +81,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.done = False
         self.winner = 0
 
+        self.max_puck_speed = 20
+
         self.timeStep = 1.0 / FPS
         self.time = 0
         self.max_timesteps = 500
@@ -130,12 +132,13 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.world_objects = []
         self.drawlist = []
 
-    def _create_player(self, position, color):
+    def _create_player(self, position, color, is_player_two):
         player = self.world.CreateDynamicBody(
             position=position,
             angle=0.0,
             fixtures=fixtureDef(
-                shape=polygonShape(vertices=[ (x/SCALE,y/SCALE) for x,y in RACKETPOLY ]),
+                shape=polygonShape(vertices=[ (-x/SCALE if is_player_two else x/SCALE , y/SCALE)
+                                              for x,y in RACKETPOLY ]),
                 density=200.0,
                 friction=0.1,
                 categoryBits=0x0010,
@@ -321,17 +324,20 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         # Create players
         self.player1 = self._create_player(
             (W / 3, H / 2),
-            (1,0,0)
+            (1,0,0),
+            False
         )
         if self.mode != self.NORMAL:
             self.player2 = self._create_player(
                 (2* W / 3 + r_uniform(-W/6, W/6), H/2 + r_uniform(-H/4, H/4)),
-                (0,0,1)
+                (0,0,1),
+                True
             )
         else:
             self.player2 = self._create_player(
                 (2* W / 3, H / 2),
-                (0,0,1)
+                (0,0,1),
+                True
             )
         if self.mode == self.NORMAL:
             self.puck = self._create_puck( (W / 2, H / 2 + r_uniform(-H/4, H/4)), (0,0,0) )
@@ -442,6 +448,13 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         )
 
 
+    def _limit_puck_speed(self):
+        puck_speed = np.sqrt(self.puck.linearVelocity[0]**2 + self.puck.linearVelocity[1]**2)
+        if puck_speed > self.max_puck_speed:
+            self.puck.linearDamping = 10.0
+        else:
+            self.puck.linearDamping = 0.05
+
     def discrete_to_continous_action(self, discrete_action):
         ''' converts discrete actions into continuous ones (for each player)
         The actions allow only one operation each timestep, e.g. X or Y or angle change.
@@ -468,6 +481,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.player1.ApplyTorque(action[2] * TORQUEMULTIPLAYER, True)
         self._apply_action_with_max_speed(self.player2, action[3:5], 10, False)
         self.player2.ApplyTorque(-action[5] * TORQUEMULTIPLAYER, True)
+
+        self._limit_puck_speed()
 
         self.world.Step(self.timeStep, 6 * 30, 2 * 30)
 
@@ -514,3 +529,49 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
+
+
+class BasicOpponent():
+    def __init__(self):
+        self.mode = 0
+
+    def act(self, obs, verbose=False):
+        p1 = np.asarray(obs[0:3])
+        v1 = np.asarray(obs[3:6])
+        p2 = np.asarray(obs[6:9])
+        v2 = np.asarray(obs[9:12])
+        puck = np.asarray(obs[12:14])
+        puckv = np.asarray(obs[14:16])
+        # print(p1,v1,puck,puckv)
+        target_pos = p1[0:2]
+        target_angle = p1[2]
+
+        time_to_break = 0.1
+        kp = 10
+        kd = 0.5
+
+        # if ball flies towards our goal or very slowly away: try to catch it
+        if puckv[0]<1.0:
+            dist = np.sqrt(np.sum((p1[0:2] - puck)**2))
+            # Am I behind the ball?
+            if p1[0] < puck[0] and abs(p1[1] - puck[1]) < 1.0:
+                # Go and kick
+                target_pos = [puck[0]+0.2, puck[1] + puckv[1]*dist*0.1]
+                target_angle = r_uniform(-0.5,0.5) # calc proper angle here
+            else:
+                # get behind the ball first
+                target_pos = [-7, puck[1]]
+                target_angle = 0
+        else: # go in front of the goal
+            target_pos = [-7,0]
+            target_angle = 0
+
+
+        target = np.asarray([target_pos[0],target_pos[1], target_angle])
+        # use PD control to get to target
+        error = target - p1
+        need_break = abs((error / (v1+0.01))) < [time_to_break, time_to_break, time_to_break*10]
+        if verbose:
+            print(error, abs(error / (v1+0.01)), need_break)
+
+        return error*[kp,kp,kp/2] - v1*need_break*[kd,kd,kd]
