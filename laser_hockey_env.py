@@ -103,12 +103,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         # y vel puck
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(16,), dtype=np.float32)
 
-        if self.continuous:
-            # linear force in (x,y)-direction and torque
-            self.action_space = spaces.Box(-1, +1, (3*2,), dtype=np.float32)
-        else:
-
-            self.action_space = spaces.Discrete(6*2)
+        # linear force in (x,y)-direction and torque
+        self.action_space = spaces.Box(-1, +1, (3*2,), dtype=np.float32)
 
         self.reset()
 
@@ -445,17 +441,33 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             winner=self.winner
         )
 
+
+    def discrete_to_continous_action(self, discrete_action):
+        ''' converts discrete actions into continuous ones (for each player)
+        The actions allow only one operation each timestep, e.g. X or Y or angle change.
+        This is surely limiting. Other discrete actions are possible
+        Action 0: do nothing
+        Action 1: -1 in x
+        Action 2: 1 in x
+        Action 3: -1 in y
+        Action 4: 1 in y
+        Action 5: -1 in angle
+        Action 6: 1 in angle
+        '''
+        action_cont = [(discrete_action==1) * -1 + (discrete_action==2) * 1, # player x
+                       (discrete_action==3) * -1 + (discrete_action==4) * 1, # player y
+                       (discrete_action==5) * -1 + (discrete_action==6) * 1] # player angle
+
+        return action_cont
+
+
     def step(self, action):
-        if self.continuous:
-            action = np.clip(action, -1, +1).astype(np.float32)
-        else:
-            assert self.action_space.contains(action), "%r (%s) invalid " % (action, type(action))
-        pass
+        action = np.clip(action, -1, +1).astype(np.float32)
 
         self._apply_action_with_max_speed(self.player1, action[:2], 10, True)
         self.player1.ApplyTorque(action[2] * TORQUEMULTIPLAYER, True)
         self._apply_action_with_max_speed(self.player2, action[3:5], 10, False)
-        self.player2.ApplyTorque(action[5] * TORQUEMULTIPLAYER, True)
+        self.player2.ApplyTorque(-action[5] * TORQUEMULTIPLAYER, True)
 
         self.world.Step(self.timeStep, 6 * 30, 2 * 30)
 
@@ -502,7 +514,3 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
-
-
-class LaserHockeyEnvContinuous(LaserHockeyEnv):
-    continuous  = True
