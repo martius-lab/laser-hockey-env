@@ -30,7 +30,6 @@ TORQUEMULTIPLAYER = 100
 def r_uniform(mini,maxi):
     return random.random()*(maxi-mini) + mini
 
-
 class ContactDetector(contactListener):
     def __init__(self, env):
         contactListener.__init__(self)
@@ -62,7 +61,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
     NORMAL = 0
     TRAIN_SHOOTING = 1
     TRAIN_DEFENCE = 2
-
+    HUMAN_OPPONENT = False
 
     def __init__(self, mode = NORMAL):
         EzPickle.__init__(self)
@@ -575,3 +574,46 @@ class BasicOpponent():
             print(error, abs(error / (v1+0.01)), need_break)
 
         return error*[kp,kp,kp/2] - v1*need_break*[kd,kd,kd]
+
+class HumanOpponent():
+    def __init__(self, env, player=1):
+        self.env = env
+        self.player = player
+        self.a = 0
+
+        if env.viewer is None:
+            env.render()
+
+        self.env.viewer.window.on_key_press = self.key_press
+        self.env.viewer.window.on_key_release = self.key_release
+
+        self.key_action_mapping = {
+            65361:1 if self.player == 1 else 2, # Left arrow key
+            65362:4 if self.player == 1 else 3, # Up arrow key
+            65363:2 if self.player == 1 else 1, # Right arrow key
+            65364:3 if self.player == 1 else 4, # Down arrow key
+            119:5 if self.player == 1 else 6, # w
+            115:6 if self.player == 1 else 5, # s
+
+        }
+
+        print('Human Controls:')
+        print(' left:\t\t\tleft arrow key left')
+        print(' right:\t\t\tarrow key right')
+        print(' up:\t\t\tarrow key up')
+        print(' down:\t\t\tarrow key down')
+        print(' tilt clockwise:\tw')
+        print(' tilt anti-clockwise:\ts')
+
+    def key_press(self, key, mod):
+        if key in self.key_action_mapping:
+            self.a = self.key_action_mapping[key]
+
+    def key_release(self, key, mod):
+        if key in self.key_action_mapping:
+            a = self.key_action_mapping[key]
+            if self.a == a:
+                self.a = 0
+
+    def act(self, obs):
+        return self.env.discrete_to_continous_action(self.a)
