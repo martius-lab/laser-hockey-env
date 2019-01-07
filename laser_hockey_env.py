@@ -12,7 +12,7 @@ import pyglet
 from pyglet import gl
 
 FPS = 50
-SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well
+SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well (Don't touch)
 
 VIEWPORT_W = 600
 VIEWPORT_H = 400
@@ -350,16 +350,13 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                 (0,0,1),
                 True
             )
-        if self.mode == self.NORMAL:
-            if self.one_starts:
+        if self.mode == self.NORMAL or self.mode == self.TRAIN_SHOOTING:
+            if self.one_starts or self.mode == self.TRAIN_SHOOTING:
                 self.puck = self._create_puck( (W / 2 - self.r_uniform(H/8, H/4),
                                                H / 2 + self.r_uniform(-H/8, H/8)), (0,0,0) )
             else:
                 self.puck = self._create_puck( (W / 2 + self.r_uniform(H/8, H/4),
                                                H / 2 + self.r_uniform(-H/8, H/8)), (0,0,0) )
-        elif self.mode == self.TRAIN_SHOOTING:
-            self.puck = self._create_puck((W / 2 - self.r_uniform(0, W/3),
-                                          H / 2 + self.r_uniform(-H/4, H/4)),  (0,0,0) )
         elif self.mode == self.TRAIN_DEFENCE:
             self.puck = self._create_puck((W / 2 + self.r_uniform(0, W/3),
                                            H / 2 + 0.9*self.r_uniform(-H/2, H/2)),  (0,0,0) )
@@ -456,7 +453,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             max_dist = 10
             max_reward = -2
             factor = max_reward / max_dist
-            r-= self.closest_to_goal_dist*factor # Proxy reward for puck being close to goal
+            r += self.closest_to_goal_dist*factor # Proxy reward for puck being close to goal
 
             if self.winner == 0: # tie
                 r += 0
