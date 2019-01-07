@@ -1,6 +1,5 @@
 import sys, math
 import numpy as np
-import random
 
 import Box2D
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
@@ -25,10 +24,10 @@ CENTER_Y = H/2
 RACKETPOLY = [(-5,20),(+5,20),(+5,-20),(-5,-20),(-13,-10),(-15,0),(-13,10)]
 
 FORCEMULIPLAYER = 5000
-TORQUEMULTIPLAYER = 100
+TORQUEMULTIPLAYER = 200
 
-def r_uniform(mini,maxi):
-    return random.random()*(maxi-mini) + mini
+def dist_positions(p1,p2):
+    return np.sqrt(np.sum(np.asarray(p1-p2)**2))
 
 class ContactDetector(contactListener):
     def __init__(self, env):
@@ -79,12 +78,15 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.drawlist = []
         self.done = False
         self.winner = 0
+        self.one_starts = True # player one starts the game (alternating)
 
         self.max_puck_speed = 20
 
         self.timeStep = 1.0 / FPS
         self.time = 0
         self.max_timesteps = 500
+
+        self.closest_to_goal_dist = 1000
 
         # x pos player one
         # y pos player one
@@ -107,10 +109,11 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         # linear force in (x,y)-direction and torque
         self.action_space = spaces.Box(-1, +1, (3*2,), dtype=np.float32)
 
-        self.reset()
+        self.reset(self.one_starts)
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
+        self._seed = seed
         return [seed]
 
     def _destroy(self):
@@ -130,6 +133,10 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             self.world.DestroyBody(obj)
         self.world_objects = []
         self.drawlist = []
+
+    def r_uniform(self,mini,maxi):
+        return self.np_random.uniform(mini,maxi,1)[0]
+
 
     def _create_player(self, position, color, is_player_two):
         player = self.world.CreateDynamicBody(
@@ -301,7 +308,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
 
 
-    def reset(self):
+    def reset(self, one_starting = None):
         self._destroy()
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
@@ -309,6 +316,11 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.winner = 0
         self.prev_shaping = None
         self.time = 0
+        if one_starting is not None:
+            self.one_starts = one_starting
+        else:
+            self.one_starts = not self.one_starts
+        self.closest_to_goal_dist = 1000
 
         W = VIEWPORT_W / SCALE
         H = VIEWPORT_H / SCALE
@@ -322,31 +334,36 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         # Create players
         self.player1 = self._create_player(
-            (W / 3, H / 2),
+            (W / 5 , H / 2),
             (1,0,0),
             False
         )
         if self.mode != self.NORMAL:
             self.player2 = self._create_player(
-                (2* W / 3 + r_uniform(-W/6, W/6), H/2 + r_uniform(-H/4, H/4)),
+                (4* W / 5 + self.r_uniform(-W / 3, W/6), H/2 + self.r_uniform(-H/4, H/4)),
                 (0,0,1),
                 True
             )
         else:
             self.player2 = self._create_player(
-                (2* W / 3, H / 2),
+                (4 * W / 5, H / 2),
                 (0,0,1),
                 True
             )
         if self.mode == self.NORMAL:
-            self.puck = self._create_puck( (W / 2, H / 2 + r_uniform(-H/4, H/4)), (0,0,0) )
+            if self.one_starts:
+                self.puck = self._create_puck( (W / 2 - self.r_uniform(H/8, H/4),
+                                               H / 2 + self.r_uniform(-H/8, H/8)), (0,0,0) )
+            else:
+                self.puck = self._create_puck( (W / 2 + self.r_uniform(H/8, H/4),
+                                               H / 2 + self.r_uniform(-H/8, H/8)), (0,0,0) )
         elif self.mode == self.TRAIN_SHOOTING:
-            self.puck = self._create_puck((W / 2 - r_uniform(0, W/3),
-                                          H / 2 + r_uniform(-H/4, H/4)),  (0,0,0) )
+            self.puck = self._create_puck((W / 2 - self.r_uniform(0, W/3),
+                                          H / 2 + self.r_uniform(-H/4, H/4)),  (0,0,0) )
         elif self.mode == self.TRAIN_DEFENCE:
-            self.puck = self._create_puck((W / 2 + r_uniform(0, W/3),
-                                           H / 2 + 0.9*r_uniform(-H/2, H/2)),  (0,0,0) )
-            force = -(self.puck.position - (0, H/2 + r_uniform(-66/SCALE, 66/SCALE)))*self.puck.mass/self.timeStep
+            self.puck = self._create_puck((W / 2 + self.r_uniform(0, W/3),
+                                           H / 2 + 0.9*self.r_uniform(-H/2, H/2)),  (0,0,0) )
+            force = -(self.puck.position - (0, H/2 + self.r_uniform(-66/SCALE, 66/SCALE)))*self.puck.mass/self.timeStep
             self.puck.ApplyForceToCenter(force, True)
 
 
@@ -429,15 +446,24 @@ class LaserHockeyEnv(gym.Env, EzPickle):
     def _compute_reward(self):
         r = 0
         if self.puck.position[0] < CENTER_X + 0.1:
-            dist_to_puck = np.sqrt(np.sum(np.asarray(self.player1.position - self.puck.position)**2))
-            r -= dist_to_puck*0.001
+            dist_to_puck = dist_positions(self.player1.position, self.puck.position)
+            max_dist = 10
+            max_reward = -5 # max (negative) reward through this proxy
+            factor = max_reward / (max_dist*self.max_timesteps/2)
+            r += dist_to_puck*factor # Proxy reward for being close to puck in the own half
 
-        if self.winner == 0: # tie
-            r += 5
-        elif self.winner == 1: # you won
-            r += 10
-        else: # opponent won
-            r -= 10
+        if self.done:
+            max_dist = 10
+            max_reward = -2
+            factor = max_reward / max_dist
+            r-= self.closest_to_goal_dist*factor # Proxy reward for puck being close to goal
+
+            if self.winner == 0: # tie
+                r += 0
+            elif self.winner == 1: # you won
+                r += 10
+            else: # opponent won
+                r -= 10
 
         return r
 
@@ -490,8 +516,10 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         info = self._get_info()
         if self.time >=self.max_timesteps:
             self.done = True
-        self.time += 1
 
+        self.closest_to_goal_dist = min(self.closest_to_goal_dist,
+                                        dist_positions(self.puck.position, (W,H/2)))
+        self.time += 1
         return obs, reward, self.done, info
 
     def render(self, mode='human'):
@@ -556,7 +584,7 @@ class BasicOpponent():
             if p1[0] < puck[0] and abs(p1[1] - puck[1]) < 1.0:
                 # Go and kick
                 target_pos = [puck[0]+0.2, puck[1] + puckv[1]*dist*0.1]
-                target_angle = r_uniform(-0.5,0.5) # calc proper angle here
+                target_angle = self.r_uniform(-0.5,0.5) # calc proper angle here
             else:
                 # get behind the ball first
                 target_pos = [-7, puck[1]]
