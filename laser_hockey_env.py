@@ -581,7 +581,7 @@ class BasicOpponent():
             if p1[0] < puck[0] and abs(p1[1] - puck[1]) < 1.0:
                 # Go and kick
                 target_pos = [puck[0]+0.2, puck[1] + puckv[1]*dist*0.1]
-                target_angle = self.r_uniform(-0.5,0.5) # calc proper angle here
+                target_angle = np.random.uniform(-0.5,0.5) # calc proper angle here
             else:
                 # get behind the ball first
                 target_pos = [-7, puck[1]]
