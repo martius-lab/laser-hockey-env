@@ -45,6 +45,10 @@ class ContactDetector(contactListener):
                 print('Player 2 scored')
                 self.env.done = True
                 self.env.winner = 2
+        if (contact.fixtureA.body == self.env.player1 or contact.fixtureB.body == self.env.player1) \
+           and (contact.fixtureA.body == self.env.puck or contact.fixtureB.body == self.env.puck):
+            # print("player 1 contacted the puck")
+            self.env.player1_contact_puck = True
 
     def EndContact(self, contact):
         pass
@@ -59,10 +63,12 @@ class LaserHockeyEnv(gym.Env, EzPickle):
     continuous = False
     NORMAL = 0
     TRAIN_SHOOTING = 1
-    TRAIN_DEFENCE = 2
-    HUMAN_OPPONENT = False
+    TRAIN_DEFENSE = 2
 
     def __init__(self, mode = NORMAL):
+        """ mode is the game mode: NORMAL, TRAIN_SHOOTING, TRAIN_DEFENSE,
+        it can be changed later using the reset function
+        """
         EzPickle.__init__(self)
         self.seed()
         self.viewer = None
@@ -308,7 +314,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
 
 
-    def reset(self, one_starting = None):
+    def reset(self, one_starting = None, mode = None):
         self._destroy()
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
@@ -316,11 +322,16 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.winner = 0
         self.prev_shaping = None
         self.time = 0
-        if one_starting is not None:
-            self.one_starts = one_starting
-        else:
-            self.one_starts = not self.one_starts
+        if mode is not None and mode in [self.NORMAL, self.TRAIN_SHOOTING, self.TRAIN_DEFENSE]:
+            self.mode = mode
+
+        if self.mode == self.NORMAL:
+            if one_starting is not None:
+                self.one_starts = one_starting
+            else:
+                self.one_starts = not self.one_starts
         self.closest_to_goal_dist = 1000
+        self.player1_contact_puck = False
 
         W = VIEWPORT_W / SCALE
         H = VIEWPORT_H / SCALE
@@ -357,7 +368,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             else:
                 self.puck = self._create_puck( (W / 2 + self.r_uniform(H/8, H/4),
                                                H / 2 + self.r_uniform(-H/8, H/8)), (0,0,0) )
-        elif self.mode == self.TRAIN_DEFENCE:
+        elif self.mode == self.TRAIN_DEFENSE:
             self.puck = self._create_puck((W / 2 + self.r_uniform(0, W/3),
                                            H / 2 + 0.9*self.r_uniform(-H/2, H/2)),  (0,0,0) )
             force = -(self.puck.position - (0, H/2 + self.r_uniform(-66/SCALE, 66/SCALE)))*self.puck.mass/self.timeStep
@@ -442,19 +453,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
     def _compute_reward(self):
         r = 0
-        if self.puck.position[0] < CENTER_X + 0.1:
-            dist_to_puck = dist_positions(self.player1.position, self.puck.position)
-            max_dist = 10
-            max_reward = -5 # max (negative) reward through this proxy
-            factor = max_reward / (max_dist*self.max_timesteps/2)
-            r += dist_to_puck*factor # Proxy reward for being close to puck in the own half
 
         if self.done:
-            max_dist = 10
-            max_reward = -2
-            factor = max_reward / max_dist
-            r += self.closest_to_goal_dist*factor # Proxy reward for puck being close to goal
-
             if self.winner == 0: # tie
                 r += 0
             elif self.winner == 1: # you won
@@ -465,9 +465,41 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         return r
 
     def _get_info(self):
-        return dict(
-            winner=self.winner
-        )
+        # different proxy rewards:
+        # how close did the puck get to the goal
+        reward_closest_to_goal = 0
+        if self.done:
+            max_dist = 10.
+            max_reward = -1.
+            factor = max_reward / max_dist
+            reward_closest_to_goal = self.closest_to_goal_dist*factor # Proxy reward for puck being close to goal
+
+        # Proxy reward for being close to puck in the own half
+        reward_closeness_to_puck = 0
+        if self.puck.position[0] < CENTER_X:
+            dist_to_puck = dist_positions(self.player1.position, self.puck.position)
+            max_dist = 10.
+            max_reward = -5. # max (negative) reward through this proxy
+            factor = max_reward / (max_dist*self.max_timesteps/2)
+            reward_closeness_to_puck += dist_to_puck*factor # Proxy reward for being close to puck in the own half
+        # Proxy reward: touch puck
+        reward_touch_puck = 0.
+        if self.player1_contact_puck:
+            reward_touch_puck = 1.
+
+        # puck is flying in the right direction
+        reward_puck_direction = 0
+        max_reward = 1.
+        factor = max_reward / (self.max_timesteps * self.max_puck_speed)
+        reward_puck_direction = self.puck.linearVelocity[0]*factor # Puck flies right is good and left not
+
+
+        return { "winner": self.winner,
+                 "reward_closest_to_goal" : reward_closest_to_goal,
+                 "reward_closeness_to_puck" : reward_closeness_to_puck,
+                 "reward_touch_puck" : reward_touch_puck,
+                 "reward_puck_direction" : reward_puck_direction,
+               }
 
 
     def _limit_puck_speed(self):
@@ -505,14 +537,16 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.player2.ApplyTorque(-action[5] * TORQUEMULTIPLAYER, True)
 
         self._limit_puck_speed()
+        self.player1_contact_puck = False
 
         self.world.Step(self.timeStep, 6 * 30, 2 * 30)
 
         obs = self._get_obs()
-        reward = self._compute_reward()
-        info = self._get_info()
         if self.time >=self.max_timesteps:
             self.done = True
+
+        reward = self._compute_reward()
+        info = self._get_info()
 
         self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                         dist_positions(self.puck.position, (W,H/2)))
