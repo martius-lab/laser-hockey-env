@@ -44,7 +44,7 @@ class ContactDetector(contactListener):
             if self.env.puck == contact.fixtureA.body or self.env.puck == contact.fixtureB.body:
                 print('Player 2 scored')
                 self.env.done = True
-                self.env.winner = 2
+                self.env.winner = -1
         if (contact.fixtureA.body == self.env.player1 or contact.fixtureB.body == self.env.player1) \
            and (contact.fixtureA.body == self.env.puck or contact.fixtureB.body == self.env.puck):
             # print("player 1 contacted the puck")
@@ -466,14 +466,6 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
     def _get_info(self):
         # different proxy rewards:
-        # how close did the puck get to the goal
-        reward_closest_to_goal = 0
-        if self.done:
-            max_dist = 10.
-            max_reward = -1.
-            factor = max_reward / max_dist
-            reward_closest_to_goal = self.closest_to_goal_dist*factor # Proxy reward for puck being close to goal
-
         # Proxy reward for being close to puck in the own half
         reward_closeness_to_puck = 0
         if self.puck.position[0] < CENTER_X:
@@ -495,7 +487,6 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
 
         return { "winner": self.winner,
-                 "reward_closest_to_goal" : reward_closest_to_goal,
                  "reward_closeness_to_puck" : reward_closeness_to_puck,
                  "reward_touch_puck" : reward_touch_puck,
                  "reward_puck_direction" : reward_puck_direction,
