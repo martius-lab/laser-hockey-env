@@ -115,6 +115,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         # linear force in (x,y)-direction and torque
         self.action_space = spaces.Box(-1, +1, (3*2,), dtype=np.float32)
 
+        # see discrete_to_continous_action()
+        self.discrete_action_space = spaces.Discrete(7)
+
         self.reset(self.one_starts)
 
     def seed(self, seed=None):
