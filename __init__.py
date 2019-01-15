@@ -1,1 +1,1 @@
-from lh_environment.laser_hockey_env import LaserHockeyEnv
+from laser_hockey_env import laser_hockey_env

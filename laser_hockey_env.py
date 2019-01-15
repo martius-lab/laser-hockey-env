@@ -675,5 +675,5 @@ from gym.envs.registration import register
 
 register(
     id='LaserHockey-v0',
-    entry_point='lh_environment.laser_hockey_env:LaserHockeyEnv',
+    entry_point='laser_hockey_env.laser_hockey_env:LaserHockeyEnv',
 )
