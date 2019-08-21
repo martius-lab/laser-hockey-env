@@ -53,7 +53,6 @@ class ContactDetector(contactListener):
     def EndContact(self, contact):
         pass
 
-
 class LaserHockeyEnv(gym.Env, EzPickle):
     metadata = {
         'render.modes': ['human', 'rgb_array'],
@@ -685,3 +684,11 @@ class HumanOpponent():
 
     def act(self, obs):
         return self.env.discrete_to_continous_action(self.a)
+
+
+from gym.envs.registration import register
+
+register(
+    id='LaserHockey-v0',
+    entry_point='laser_hockey_env.laser_hockey_env:LaserHockeyEnv',
+)
