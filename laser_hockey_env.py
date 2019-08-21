@@ -1,4 +1,4 @@
-import sys, math
+import math
 import numpy as np
 
 import Box2D
@@ -8,8 +8,8 @@ import gym
 from gym import spaces
 from gym.utils import seeding, EzPickle
 
-import pyglet
-from pyglet import gl
+# import pyglet
+# from pyglet import gl
 
 FPS = 50
 SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well (Don't touch)
@@ -27,7 +27,7 @@ FORCEMULIPLAYER = 5000
 TORQUEMULTIPLAYER = 200
 
 def dist_positions(p1,p2):
-    return np.sqrt(np.sum(np.asarray(p1-p2)**2))
+    return np.sqrt(np.sum(np.asarray(p1-p2)**2,axis=-1))
 
 class ContactDetector(contactListener):
     def __init__(self, env):
@@ -94,23 +94,25 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         self.closest_to_goal_dist = 1000
 
-        # x pos player one
-        # y pos player one
-        # angle player one
-        # x vel player one
-        # y vel player one
-        # angular vel player one
-        # x player two
-        # y player two
-        # angle player two
-        # y vel player two
-        # y vel player two
-        # angular vel player two
-        # x pos puck
-        # y pos puck
-        # x vel puck
-        # y vel puck
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(16,), dtype=np.float32)
+        #0  x pos player one
+        #1  y pos player one
+        #2  sin(angle player one)
+        #3  cos(angle player one)
+        #4  x vel player one
+        #5  y vel player one
+        #6  angular vel player one
+        #7  x player two
+        #8  y player two
+        #9  sin(angle player two)
+        #10 cos(angle player two)
+        #11 y vel player two
+        #12 y vel player two
+        #13 angular vel player two
+        #14 x pos puck
+        #15 y pos puck
+        #16 x vel puck
+        #17 y vel puck
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(18,), dtype=np.float32)
 
         # linear force in (x,y)-direction and torque
         self.action_space = spaces.Box(-1, +1, (3*2,), dtype=np.float32)
@@ -408,13 +410,13 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             player.ApplyForceToCenter(force.tolist(), True)
             return
 
-        if (speed < max_speed):
+        if speed < max_speed:
             player.linearDamping = 1.0
             player.ApplyForceToCenter(force.tolist(), True)
         else:
             player.linearDamping = 10.0
             deltaVelocity = self.timeStep * force / player.mass
-            if (np.sqrt(np.sum((velocity + deltaVelocity)**2)) < speed):
+            if np.sqrt(np.sum((velocity + deltaVelocity) ** 2)) < speed:
                 player.ApplyForceToCenter(force.tolist(), True)
             else:
                 pass
@@ -422,11 +424,11 @@ class LaserHockeyEnv(gym.Env, EzPickle):
     def _get_obs(self):
         obs = np.hstack([
             self.player1.position-[CENTER_X,CENTER_Y],
-            [self.player1.angle],
+            [math.sin(self.player1.angle), math.cos(self.player1.angle)],
             self.player1.linearVelocity,
             [self.player1.angularVelocity],
             self.player2.position-[CENTER_X,CENTER_Y],
-            [self.player2.angle],
+            [math.sin(self.player2.angle), math.cos(self.player2.angle)],
             self.player2.linearVelocity,
             [self.player2.angularVelocity],
             self.puck.position-[CENTER_X,CENTER_Y],
@@ -436,15 +438,15 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         return obs
 
     def obs_agent_two(self):
-        ''' returns the observations for agent two (symmetric mirrored version of agent one)
-        '''
+        """ returns the observations for agent two (symmetric mirrored version of agent one)
+        """
         obs = np.hstack([
             -(self.player2.position-[CENTER_X,CENTER_Y]),
-            [-self.player2.angle],
+            [math.sin(-self.player2.angle), math.cos(-self.player2.angle)],
             -self.player2.linearVelocity,
             [-self.player2.angularVelocity],
             -(self.player1.position-[CENTER_X,CENTER_Y]),
-            [-self.player1.angle],
+            [math.sin(-self.player1.angle), math.cos(-self.player1.angle)],
             -self.player1.linearVelocity,
             [-self.player1.angularVelocity],
             -(self.puck.position-[CENTER_X,CENTER_Y]),
@@ -495,6 +497,19 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                  "reward_puck_direction" : reward_puck_direction,
                }
 
+    def set_state(self, state):
+        """ function to revert the state of the environment to a previous state (observation)"""
+        self.player1.position = (state[[0, 1]] + [CENTER_X, CENTER_Y]).tolist()
+        self.player1.angle = math.atan2(state[2], state[3])
+        self.player1.linearVelocity = [state[4], state[5]]
+        self.player1.angularVelocity = state[6]
+        self.player2.position = (state[[7, 8]] + [CENTER_X, CENTER_Y]).tolist()
+        self.player2.angle = math.atan2(state[9], state[10])
+        self.player2.linearVelocity = [state[11], state[12]]
+        self.player2.angularVelocity = state[13]
+        self.puck.position = (state[[14, 15]] + [CENTER_X, CENTER_Y]).tolist()
+        self.puck.linearVelocity = [state[16], state[17]]
+
 
     def _limit_puck_speed(self):
         puck_speed = np.sqrt(self.puck.linearVelocity[0]**2 + self.puck.linearVelocity[1]**2)
@@ -502,6 +517,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             self.puck.linearDamping = 10.0
         else:
             self.puck.linearDamping = 0.05
+        self.puck.angularSpeed = 0
 
     def discrete_to_continous_action(self, discrete_action):
         ''' converts discrete actions into continuous ones (for each player)
@@ -588,12 +604,11 @@ class BasicOpponent():
         self.mode = 0
 
     def act(self, obs, verbose=False):
-        p1 = np.asarray(obs[0:3])
-        v1 = np.asarray(obs[3:6])
-        p2 = np.asarray(obs[6:9])
-        v2 = np.asarray(obs[9:12])
-        puck = np.asarray(obs[12:14])
-        puckv = np.asarray(obs[14:16])
+        alpha = math.atan2(obs[2],obs[3])
+        p1 = np.asarray([obs[0], obs[1], alpha])
+        v1 = np.asarray(obs[4:7])
+        puck = np.asarray(obs[14:16])
+        puckv = np.asarray(obs[16:18])
         # print(p1,v1,puck,puckv)
         target_pos = p1[0:2]
         target_angle = p1[2]
@@ -626,7 +641,7 @@ class BasicOpponent():
         if verbose:
             print(error, abs(error / (v1+0.01)), need_break)
 
-        return error*[kp,kp,kp/2] - v1*need_break*[kd,kd,kd]
+        return np.clip(error*[kp,kp,kp/2] - v1*need_break*[kd,kd,kd],-1,1)
 
 class HumanOpponent():
     def __init__(self, env, player=1):
