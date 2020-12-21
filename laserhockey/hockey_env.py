@@ -762,11 +762,11 @@ class HumanOpponent():
 
 class HockeyEnv_BasicOpponent(HockeyEnv):
 
-    def __init__(self, mode=HockeyEnv.NORMAL, keep_mode=False):
-        super().__init__(mode=mode, keep_mode=keep_mode)
-        self.opponent = BasicOpponent()
-        # linear force in (x,y)-direction and torque
-        self.action_space = spaces.Box(-1, +1, (3,), dtype=np.float32)
+    def __init__(self, mode=HockeyEnv.NORMAL, weak_opponent=False):
+        super().__init__(mode=mode, keep_mode=True)
+        self.opponent = BasicOpponent(weak=weak_opponent)
+        # linear force in (x,y)-direction, torque, and shooting
+        self.action_space = spaces.Box(-1, +1, (4,), dtype=np.float32)
 
     def step(self, action):
         ob2 = self.obs_agent_two()
@@ -782,11 +782,13 @@ try:
         id='Hockey-v0',
         # entry_point='laser_hockey_env.hockey_env:HockeyEnv',
         entry_point='hockey_env:HockeyEnv',
+        kwargs={'mode': 0}
     )
     register(
         id='Hockey-One-v0',
         # entry_point='laser_hockey_env.hockey_env:HockeyEnv',
         entry_point='hockey_env:HockeyEnv_BasicOpponent',
+        kwargs={'mode' : 0, 'weak_opponent': False}
     )
 except Exception as e:
     print(e)
