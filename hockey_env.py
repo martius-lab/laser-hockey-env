@@ -24,13 +24,15 @@ CENTER_Y = H / 2
 ZONE = W / 20
 MAX_ANGLE = math.pi / 3  # Maximimal angle of racket
 MAX_TIME_KEEP_PUCK = 15
+GOAL_SIZE = 75
 
 RACKETPOLY = [(-10, 20), (+5, 20), (+5, -20), (-10, -20), (-18, -10), (-21, 0), (-18, 10)]
 RACKETFACTOR = 1.2
 
 FORCEMULTIPLIER = 6000
-SHOOTFORCEMULTIPLIER = 30
+SHOOTFORCEMULTIPLIER = 60
 TORQUEMULTIPLIER = 400
+MAX_PUCK_SPEED = 25
 
 
 def dist_positions(p1, p2):
@@ -55,15 +57,13 @@ class ContactDetector(contactListener):
                 self.env.winner = -1
         if (contact.fixtureA.body == self.env.player1 or contact.fixtureB.body == self.env.player1) \
             and (contact.fixtureA.body == self.env.puck or contact.fixtureB.body == self.env.puck):
-            if self.env.keep_mode:
+            if self.env.keep_mode and self.env.puck.linearVelocity[0] < 0.1:
                 if self.env.player1_has_puck == 0:
                     self.env.player1_has_puck = MAX_TIME_KEEP_PUCK
-            # print("player 1 contacted the puck")
-            self.env.player1_contact_puck = True
 
         if (contact.fixtureA.body == self.env.player2 or contact.fixtureB.body == self.env.player2) \
             and (contact.fixtureA.body == self.env.puck or contact.fixtureB.body == self.env.puck):
-            if self.env.keep_mode:
+            if self.env.keep_mode and self.env.puck.linearVelocity[0] > -0.1:
                 if self.env.player2_has_puck == 0:
                     self.env.player2_has_puck = MAX_TIME_KEEP_PUCK
 
@@ -82,7 +82,7 @@ class HockeyEnv(gym.Env, EzPickle):
     TRAIN_SHOOTING = 1
     TRAIN_DEFENSE = 2
 
-    def __init__(self, keep_mode=False, mode=NORMAL):
+    def __init__(self, keep_mode=True, mode=NORMAL):
         """ mode: is the game mode: NORMAL, TRAIN_SHOOTING, TRAIN_DEFENSE,
         keep_mode: whether the puck gets catched by
         it can be changed later using the reset function
@@ -107,35 +107,31 @@ class HockeyEnv(gym.Env, EzPickle):
         self.winner = 0
         self.one_starts = True  # player one starts the game (alternating)
 
-        self.max_puck_speed = 18
-
         self.timeStep = 1.0 / FPS
         self.time = 0
-        self.max_timesteps = 250
+        self.max_timesteps = None # see reset
 
         self.closest_to_goal_dist = 1000
 
         # 0  x pos player one
         # 1  y pos player one
-        # 2  sin(angle player one)
-        # 3  cos(angle player one)
-        # 4  x vel player one
-        # 5  y vel player one
-        # 6  angular vel player one
-        # 7  x player two
-        # 8  y player two
-        # 9  sin(angle player two)
-        # 10 cos(angle player two)
-        # 11 y vel player two
-        # 12 y vel player two
-        # 13 angular vel player two
-        # 14 x pos puck
-        # 15 y pos puck
-        # 16 x vel puck
-        # 17 y vel puck
+        # 2  angle player one
+        # 3  x vel player one
+        # 4  y vel player one
+        # 5  angular vel player one
+        # 6  x player two
+        # 7  y player two
+        # 8  angle player two
+        # 9 y vel player two
+        # 10 y vel player two
+        # 11 angular vel player two
+        # 12 x pos puck
+        # 13 y pos puck
+        # 14 x vel puck
+        # 15 y vel puck
         # Keep Puck Mode
-        # 18 time left player one has puck
-        # 19 time left player two has puck
+        # 16 time left player one has puck
+        # 17 time left player two has puck
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(18,), dtype=np.float32)
 
         # linear force in (x,y)-direction and torque
@@ -242,27 +238,18 @@ class HockeyEnv(gym.Env, EzPickle):
             objs[-1].color1 = (0.8, 0.8, 0.8)
             objs[-1].color2 = (0.8, 0.8, 0.8)
 
-            objs.append(self.world.CreateStaticBody(
-                position=(W / 2, H / 2),
-                angle=0.0,
-                fixtures=fixtureDef(
-                    shape=circleShape(radius=100 / SCALE, pos=(0, 0)),
-                    categoryBits=0x0,
-                    maskBits=0x0)
-            ))
-            objs[-1].color1 = (0.8, 0.8, 0.8)
-            objs[-1].color2 = (0.8, 0.8, 0.8)
-
+            # left goal
             objs.append(self.world.CreateStaticBody(
                 position=(W / 2 - 250 / SCALE, H / 2),
                 angle=0.0,
                 fixtures=fixtureDef(
-                    shape=circleShape(radius=70 / SCALE, pos=(0, 0)),
+                    shape=circleShape(radius=GOAL_SIZE / SCALE, pos=(0, 0)),
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (255. / 255, 204. / 255, 191. / 255)
-            objs[-1].color2 = (255. / 255, 204. / 255, 191. / 255)
+            orange = (239. / 255, 203. / 255, 138. / 255)
+            objs[-1].color1 = orange
+            objs[-1].color2 = orange
 
             poly = [(0, 100), (100, 100), (100, -100), (0, -100)]
             objs.append(self.world.CreateStaticBody(
@@ -276,16 +263,17 @@ class HockeyEnv(gym.Env, EzPickle):
             objs[-1].color1 = (1, 1, 1)
             objs[-1].color2 = (1, 1, 1)
 
+            # right goal
             objs.append(self.world.CreateStaticBody(
                 position=(W / 2 + 250 / SCALE, H / 2),
                 angle=0.0,
                 fixtures=fixtureDef(
-                    shape=circleShape(radius=70 / SCALE, pos=(0, 0)),
+                    shape=circleShape(radius=GOAL_SIZE / SCALE, pos=(0, 0)),
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (255. / 255, 204. / 255, 191. / 255)
-            objs[-1].color2 = (255. / 255, 204. / 255, 191. / 255)
+            objs[-1].color1 = orange
+            objs[-1].color2 = orange
 
             poly = [(100, 100), (0, 100), (0, -100), (100, -100)]
             objs.append(self.world.CreateStaticBody(
@@ -299,6 +287,7 @@ class HockeyEnv(gym.Env, EzPickle):
             objs[-1].color1 = (1, 1, 1)
             objs[-1].color2 = (1, 1, 1)
 
+
             return objs
 
         self.world_objects = []
@@ -306,16 +295,16 @@ class HockeyEnv(gym.Env, EzPickle):
         self.world_objects.extend(_create_decoration())
 
         poly = [(-250, 10), (-250, -10), (250, -10), (250, 10)]
-        self.world_objects.append(_create_wall((W / 2, H - 1), poly))
-        self.world_objects.append(_create_wall((W / 2, 1), poly))
+        self.world_objects.append(_create_wall((W / 2, H - .5), poly))
+        self.world_objects.append(_create_wall((W / 2, .5), poly))
 
-        poly = [(-10, 59), (10, 50), (10, -60), (-10, -60)]
-        self.world_objects.append(_create_wall((W / 2 - 245 / SCALE, H - 52.5 / SCALE - 1), [(x, -y) for x, y in poly]))
-        self.world_objects.append(_create_wall((W / 2 - 245 / SCALE, 52.5 / SCALE + 1), poly))
+        poly = [(-10, (H-1)/2*SCALE - GOAL_SIZE), (10, (H-1)/2*SCALE - GOAL_SIZE-7), (10, -5), (-10, -5)]
+        self.world_objects.append(_create_wall((W / 2 - 245 / SCALE, H - .5), [(x, -y) for x, y in poly]))
+        self.world_objects.append(_create_wall((W / 2 - 245 / SCALE, .5), poly))
 
         self.world_objects.append(
-            _create_wall((W / 2 + 245 / SCALE, H - 52.5 / SCALE - 1), [(-x, -y) for x, y in poly]))
-        self.world_objects.append(_create_wall((W / 2 + 245 / SCALE, 52.5 / SCALE + 1), [(-x, y) for x, y in poly]))
+            _create_wall((W / 2 + 245 / SCALE, H - .5), [(-x, -y) for x, y in poly]))
+        self.world_objects.append(_create_wall((W / 2 + 245 / SCALE, 0.5), [(-x, y) for x, y in poly]))
 
         self.drawlist.extend(self.world_objects)
 
@@ -338,8 +327,8 @@ class HockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x010,
                     maskBits=0x0010)]
         )
-        goal.color1 = (1, 1, 1)
-        goal.color2 = (1, 1, 1)
+        goal.color1 = (.5, .5, .5)
+        goal.color2 = (.5, .5, .5)
 
         return goal
 
@@ -355,12 +344,15 @@ class HockeyEnv(gym.Env, EzPickle):
             self.mode = mode
 
         if self.mode == self.NORMAL:
+            self.max_timesteps = 250
             if one_starting is not None:
                 self.one_starts = one_starting
             else:
                 self.one_starts = not self.one_starts
+        else:
+            self.max_timesteps = 80
         self.closest_to_goal_dist = 1000
-        self.player1_contact_puck = False
+
 
         W = VIEWPORT_W / SCALE
         H = VIEWPORT_H / SCALE
@@ -368,26 +360,29 @@ class HockeyEnv(gym.Env, EzPickle):
         # Create world
         self._create_world()
 
-        poly = [(-5, 66), (5, 66), (5, -66), (-5, -66)]
-        self.goal_player_1 = self._create_goal((W / 2 - 245 / SCALE, H / 2), poly)
-        self.goal_player_2 = self._create_goal((W / 2 + 245 / SCALE, H / 2), poly)
+        poly = [(-10, GOAL_SIZE), (10, GOAL_SIZE), (10, -GOAL_SIZE), (-10, -GOAL_SIZE)]
+        self.goal_player_1 = self._create_goal((W / 2 - 245 / SCALE - 10 / SCALE, H / 2), poly)
+        self.goal_player_2 = self._create_goal((W / 2 + 245 / SCALE + 10 / SCALE, H / 2), poly)
+
 
         # Create players
+        red = (235./255., 98./255., 53./255.)
         self.player1 = self._create_player(
             (W / 5, H / 2),
-            (1, 0, 0),
+            red,
             False
         )
+        blue = (93./255, 158./255., 199./255.)
         if self.mode != self.NORMAL:
             self.player2 = self._create_player(
                 (4 * W / 5 + self.r_uniform(-W / 3, W / 6), H / 2 + self.r_uniform(-H / 4, H / 4)),
-                (0, 0, 1),
+                blue,
                 True
             )
         else:
             self.player2 = self._create_player(
                 (4 * W / 5, H / 2),
-                (0, 0, 1),
+                blue,
                 True
             )
         if self.mode == self.NORMAL or self.mode == self.TRAIN_SHOOTING:
@@ -399,12 +394,16 @@ class HockeyEnv(gym.Env, EzPickle):
                                                H / 2 + self.r_uniform(-H / 8, H / 8)), (0, 0, 0))
         elif self.mode == self.TRAIN_DEFENSE:
             self.puck = self._create_puck((W / 2 + self.r_uniform(0, W / 3),
-                                           H / 2 + 0.9 * self.r_uniform(-H / 2, H / 2)), (0, 0, 0))
-            force = -(self.puck.position - (
-                0, H / 2 + self.r_uniform(-66 / SCALE, 66 / SCALE))) * self.puck.mass / self.timeStep
+                                           H / 2 + 0.8 * self.r_uniform(-H / 2, H / 2)), (0, 0, 0))
+            direction = (self.puck.position - (
+                0, H / 2 + .6*self.r_uniform(-GOAL_SIZE / SCALE, GOAL_SIZE / SCALE)))
+            direction = direction / direction.length
+            force = -direction * SHOOTFORCEMULTIPLIER * self.puck.mass / self.timeStep
             self.puck.ApplyForceToCenter(force, True)
+          # Todo get the scaling right
 
         self.drawlist.extend([self.player1, self.player2, self.puck])
+
 
         obs = self._get_obs()
 
@@ -452,7 +451,7 @@ class HockeyEnv(gym.Env, EzPickle):
             torque = action * TORQUEMULTIPLIER
         else:
             torque = -action * TORQUEMULTIPLIER
-        if (is_player_one and abs(angle) > MAX_ANGLE):  # limit rotation
+        if (abs(angle) > MAX_ANGLE):  # limit rotation
             torque = 0
             if player.angle * player.angularVelocity > 0:
                 torque = -0.1 * player.angularVelocity * player.mass / self.timeStep
@@ -465,17 +464,16 @@ class HockeyEnv(gym.Env, EzPickle):
     def _get_obs(self):
         obs = np.hstack([
             self.player1.position - [CENTER_X, CENTER_Y],
-            [math.sin(self.player1.angle), math.cos(self.player1.angle)],
+            [self.player1.angle],
             self.player1.linearVelocity,
             [self.player1.angularVelocity],
             self.player2.position - [CENTER_X, CENTER_Y],
-            [math.sin(self.player2.angle), math.cos(self.player2.angle)],
+            [self.player2.angle],
             self.player2.linearVelocity,
             [self.player2.angularVelocity],
             self.puck.position - [CENTER_X, CENTER_Y],
-            self.puck.linearVelocity
-        ])
-
+            self.puck.linearVelocity]
+            + ([] if not self.keep_mode else [self.player1_has_puck, self.player2_has_puck]))
         return obs
 
     def obs_agent_two(self):
@@ -483,17 +481,17 @@ class HockeyEnv(gym.Env, EzPickle):
         """
         obs = np.hstack([
             -(self.player2.position - [CENTER_X, CENTER_Y]),
-            [math.sin(-self.player2.angle), math.cos(-self.player2.angle)],
+            [-self.player2.angle],
             -self.player2.linearVelocity,
             [-self.player2.angularVelocity],
             -(self.player1.position - [CENTER_X, CENTER_Y]),
-            [math.sin(-self.player1.angle), math.cos(-self.player1.angle)],
+            [-self.player1.angle],
             -self.player1.linearVelocity,
             [-self.player1.angularVelocity],
             -(self.puck.position - [CENTER_X, CENTER_Y]),
             -self.puck.linearVelocity
-        ] + ([] if not self.keep_mode else [self.player1_has_puck, self.player2_has_puck]))
-        print(obs)
+        ] + ([] if not self.keep_mode else [self.player2_has_puck, self.player1_has_puck]))
+
         return obs
 
     def _compute_reward(self):
@@ -520,13 +518,13 @@ class HockeyEnv(gym.Env, EzPickle):
             reward_closeness_to_puck += dist_to_puck * factor  # Proxy reward for being close to puck in the own half
         # Proxy reward: touch puck
         reward_touch_puck = 0.
-        if self.player1_contact_puck:
+        if self.player1_has_puck == MAX_TIME_KEEP_PUCK:
             reward_touch_puck = 1.
 
         # puck is flying in the right direction
         reward_puck_direction = 0
         max_reward = 1.
-        factor = max_reward / (self.max_timesteps * self.max_puck_speed)
+        factor = max_reward / (self.max_timesteps * MAX_PUCK_SPEED)
         reward_puck_direction = self.puck.linearVelocity[0] * factor  # Puck flies right is good and left not
 
         return {"winner": self.winner,
@@ -550,7 +548,7 @@ class HockeyEnv(gym.Env, EzPickle):
 
     def _limit_puck_speed(self):
         puck_speed = np.sqrt(self.puck.linearVelocity[0] ** 2 + self.puck.linearVelocity[1] ** 2)
-        if puck_speed > self.max_puck_speed:
+        if puck_speed > MAX_PUCK_SPEED:
             self.puck.linearDamping = 10.0
         else:
             self.puck.linearDamping = 0.05
@@ -601,17 +599,15 @@ class HockeyEnv(gym.Env, EzPickle):
             if self.player1_has_puck > 1:
                 self._keep_puck(self.player1)
                 self.player1_has_puck -= 1
-            if self.player1_has_puck == 1 or action[3] > 0.5:  # shooting
-                self._shoot(self.player1)
-                self.player1_has_puck = 0
+                if self.player1_has_puck == 1 or action[3] > 0.5:  # shooting
+                    self._shoot(self.player1)
+                    self.player1_has_puck = 0
             if self.player2_has_puck > 1:
                 self._keep_puck(self.player2)
                 self.player2_has_puck -= 1
-            if self.player2_has_puck == 1 or action[player2_idx+3] > 0.5:  # shooting
-                self._shoot(self.player2)
-                self.player2_has_puck = 0
-
-        self.player1_contact_puck = False
+                if self.player2_has_puck == 1 or action[player2_idx+3] > 0.5:  # shooting
+                    self._shoot(self.player2)
+                    self.player2_has_puck = 0
 
         self.world.Step(self.timeStep, 6 * 30, 2 * 30)
 
@@ -664,19 +660,21 @@ class HockeyEnv(gym.Env, EzPickle):
 
 
 class BasicOpponent():
-    def __init__(self, weak=True, keep_mode=False):
+    def __init__(self, weak=True, keep_mode=True):
         self.weak = weak
         self.keep_mode = keep_mode
+        self.phase = np.random.uniform(0, np.pi)
 
     def act(self, obs, verbose=False):
-        alpha = math.atan2(obs[2], obs[3])
+        alpha = obs[2]
         p1 = np.asarray([obs[0], obs[1], alpha])
-        v1 = np.asarray(obs[4:7])
-        puck = np.asarray(obs[14:16])
-        puckv = np.asarray(obs[16:18])
+        v1 = np.asarray(obs[3:6])
+        puck = np.asarray(obs[12:14])
+        puckv = np.asarray(obs[14:16])
         # print(p1,v1,puck,puckv)
         target_pos = p1[0:2]
         target_angle = p1[2]
+        self.phase += np.random.uniform(0, 0.2)
 
         time_to_break = 0.1
         if self.weak:
@@ -692,19 +690,15 @@ class BasicOpponent():
             if p1[0] < puck[0] and abs(p1[1] - puck[1]) < 30.0 / SCALE:
                 # Go and kick
                 target_pos = [puck[0] + 0.2, puck[1] + puckv[1] * dist * 0.1]
-                target_angle =+ np.random.uniform(-0.8, 0.8) - 0.1 * target_angle  # calc proper angle here
             else:
                 # get behind the ball first
                 target_pos = [-210 / SCALE, puck[1]]
-                target_angle = 0
         else:  # go in front of the goal
             target_pos = [-210 / SCALE, 0]
-            target_angle = 0
+        target_angle = MAX_ANGLE * np.sin(self.phase)
         shoot = 0.0
-        if self.keep_mode and obs[17]>0 and obs[17]<7:
+        if self.keep_mode and obs[16]>0 and obs[16]<7:
             shoot = 1.0
-            print("opp shoot")
-
 
         target = np.asarray([target_pos[0], target_pos[1], target_angle])
         # use PD control to get to target
@@ -762,6 +756,7 @@ class HumanOpponent():
                 self.a = 0
 
     def act(self, obs):
+        print(self.a)
         return self.env.discrete_to_continous_action(self.a)
 
 
