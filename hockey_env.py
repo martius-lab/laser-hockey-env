@@ -13,19 +13,24 @@ from gym.utils import seeding, EzPickle
 # from pyglet import gl
 
 FPS = 50
-SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well (Don't touch)
+SCALE = 60.0  # affects how fast-paced the game is, forces should be adjusted as well (Don't touch)
 
 VIEWPORT_W = 600
-VIEWPORT_H = 400
+VIEWPORT_H = 480
 W = VIEWPORT_W / SCALE
 H = VIEWPORT_H / SCALE
 CENTER_X = W / 2
 CENTER_Y = H / 2
+ZONE = W / 20
+MAX_ANGLE = math.pi / 3  # Maximimal angle of racket
+MAX_TIME_KEEP_PUCK = 15
 
-RACKETPOLY = [(-5, 20), (+5, 20), (+5, -20), (-5, -20), (-13, -10), (-15, 0), (-13, 10)]
+RACKETPOLY = [(-10, 20), (+5, 20), (+5, -20), (-10, -20), (-18, -10), (-21, 0), (-18, 10)]
+RACKETFACTOR = 1.2
 
-FORCEMULTIPLIER = 5000
-TORQUEMULTIPLIER = 200
+FORCEMULTIPLIER = 6000
+SHOOTFORCEMULTIPLIER = 30
+TORQUEMULTIPLIER = 400
 
 
 def dist_positions(p1, p2):
@@ -50,14 +55,23 @@ class ContactDetector(contactListener):
                 self.env.winner = -1
         if (contact.fixtureA.body == self.env.player1 or contact.fixtureB.body == self.env.player1) \
             and (contact.fixtureA.body == self.env.puck or contact.fixtureB.body == self.env.puck):
+            if self.env.keep_mode:
+                if self.env.player1_has_puck == 0:
+                    self.env.player1_has_puck = MAX_TIME_KEEP_PUCK
             # print("player 1 contacted the puck")
             self.env.player1_contact_puck = True
+
+        if (contact.fixtureA.body == self.env.player2 or contact.fixtureB.body == self.env.player2) \
+            and (contact.fixtureA.body == self.env.puck or contact.fixtureB.body == self.env.puck):
+            if self.env.keep_mode:
+                if self.env.player2_has_puck == 0:
+                    self.env.player2_has_puck = MAX_TIME_KEEP_PUCK
 
     def EndContact(self, contact):
         pass
 
 
-class LaserHockeyEnv(gym.Env, EzPickle):
+class HockeyEnv(gym.Env, EzPickle):
     metadata = {
         'render.modes': ['human', 'rgb_array'],
         'video.frames_per_second': FPS
@@ -68,14 +82,18 @@ class LaserHockeyEnv(gym.Env, EzPickle):
     TRAIN_SHOOTING = 1
     TRAIN_DEFENSE = 2
 
-    def __init__(self, mode=NORMAL):
-        """ mode is the game mode: NORMAL, TRAIN_SHOOTING, TRAIN_DEFENSE,
+    def __init__(self, keep_mode=False, mode=NORMAL):
+        """ mode: is the game mode: NORMAL, TRAIN_SHOOTING, TRAIN_DEFENSE,
+        keep_mode: whether the puck gets catched by
         it can be changed later using the reset function
         """
         EzPickle.__init__(self)
         self.seed()
         self.viewer = None
         self.mode = mode
+        self.keep_mode = keep_mode
+        self.player1_has_puck = 0
+        self.player2_has_puck = 0
 
         self.world = Box2D.b2World([0, 0])
         self.player1 = None
@@ -89,11 +107,11 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.winner = 0
         self.one_starts = True  # player one starts the game (alternating)
 
-        self.max_puck_speed = 20
+        self.max_puck_speed = 18
 
         self.timeStep = 1.0 / FPS
         self.time = 0
-        self.max_timesteps = 500
+        self.max_timesteps = 250
 
         self.closest_to_goal_dist = 1000
 
@@ -115,10 +133,14 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         # 15 y pos puck
         # 16 x vel puck
         # 17 y vel puck
+        # Keep Puck Mode
+        # 18 time left player one has puck
+        # 19 time left player two has puck
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(18,), dtype=np.float32)
 
         # linear force in (x,y)-direction and torque
-        self.action_space = spaces.Box(-1, +1, (3 * 2,), dtype=np.float32)
+        self.num_actions = 3 if not self.keep_mode else 4
+        self.action_space = spaces.Box(-1, +1, (self.num_actions * 2,), dtype=np.float32)
 
         # see discrete_to_continous_action()
         self.discrete_action_space = spaces.Discrete(7)
@@ -156,17 +178,18 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             position=position,
             angle=0.0,
             fixtures=fixtureDef(
-                shape=polygonShape(vertices=[(-x / SCALE if is_player_two else x / SCALE, y / SCALE)
+                shape=polygonShape(vertices=[(-x / SCALE * RACKETFACTOR if is_player_two else x / SCALE * RACKETFACTOR,
+                                              y / SCALE * RACKETFACTOR)
                                              for x, y in RACKETPOLY]),
-                density=200.0,
-                friction=0.1,
+                density=200.0 / RACKETFACTOR,
+                friction=1.0,
                 categoryBits=0x0010,
                 maskBits=0x011,  # collide only with ground
                 restitution=0.0)  # 0.99 bouncy
         )
         player.color1 = color
         player.color2 = color
-        player.linearDamping = 1.0
+        # player.linearDamping = 0.1
         player.anguarDamping = 1.0
 
         return player
@@ -176,11 +199,11 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             position=position,
             angle=0.0,
             fixtures=fixtureDef(
-                shape=circleShape(radius=10 / SCALE, pos=(0, 0)),
-                density=10.0,
+                shape=circleShape(radius=13 / SCALE, pos=(0, 0)),
+                density=7.0,
                 friction=0.1,
                 categoryBits=0x001,
-                maskBits=0x0010,  # collide only with ground
+                maskBits=0x0010,
                 restitution=0.95)  # 0.99 bouncy
         )
         puck.color1 = color
@@ -282,16 +305,17 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         self.world_objects.extend(_create_decoration())
 
-        poly = [(-250, 5), (-250, -5), (250, -5), (250, 5)]
+        poly = [(-250, 10), (-250, -10), (250, -10), (250, 10)]
         self.world_objects.append(_create_wall((W / 2, H - 1), poly))
         self.world_objects.append(_create_wall((W / 2, 1), poly))
 
-        poly = [(-5, 50), (5, 50), (5, -50), (-5, -50)]
-        self.world_objects.append(_create_wall((W / 2 - 245 / SCALE, H - 52.5 / SCALE - 1), poly))
+        poly = [(-10, 59), (10, 50), (10, -60), (-10, -60)]
+        self.world_objects.append(_create_wall((W / 2 - 245 / SCALE, H - 52.5 / SCALE - 1), [(x, -y) for x, y in poly]))
         self.world_objects.append(_create_wall((W / 2 - 245 / SCALE, 52.5 / SCALE + 1), poly))
 
-        self.world_objects.append(_create_wall((W / 2 + 245 / SCALE, H - 52.5 / SCALE - 1), poly))
-        self.world_objects.append(_create_wall((W / 2 + 245 / SCALE, 52.5 / SCALE + 1), poly))
+        self.world_objects.append(
+            _create_wall((W / 2 + 245 / SCALE, H - 52.5 / SCALE - 1), [(-x, -y) for x, y in poly]))
+        self.world_objects.append(_create_wall((W / 2 + 245 / SCALE, 52.5 / SCALE + 1), [(-x, y) for x, y in poly]))
 
         self.drawlist.extend(self.world_objects)
 
@@ -377,7 +401,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             self.puck = self._create_puck((W / 2 + self.r_uniform(0, W / 3),
                                            H / 2 + 0.9 * self.r_uniform(-H / 2, H / 2)), (0, 0, 0))
             force = -(self.puck.position - (
-            0, H / 2 + self.r_uniform(-66 / SCALE, 66 / SCALE))) * self.puck.mass / self.timeStep
+                0, H / 2 + self.r_uniform(-66 / SCALE, 66 / SCALE))) * self.puck.mass / self.timeStep
             self.puck.ApplyForceToCenter(force, True)
 
         self.drawlist.extend([self.player1, self.player2, self.puck])
@@ -386,7 +410,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         return obs
 
-    def _apply_action_with_max_speed(self, player, action, max_speed, is_player_one):
+    def _apply_translation_action_with_max_speed(self, player, action, max_speed, is_player_one):
         velocity = np.asarray(player.linearVelocity)
         speed = np.sqrt(np.sum((velocity) ** 2))
         if is_player_one:
@@ -394,8 +418,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         else:
             force = -action * FORCEMULTIPLIER
 
-        if (is_player_one and player.position[0] > CENTER_X) \
-            or (not is_player_one and player.position[0] < CENTER_X):  # bounce at the center line
+        if (is_player_one and player.position[0] > CENTER_X - ZONE) \
+            or (not is_player_one and player.position[0] < CENTER_X + ZONE):  # bounce at the center line
             force[0] = 0
             if is_player_one:
                 if player.linearVelocity[0] > 0:
@@ -407,20 +431,36 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     force[0] = -2 * player.linearVelocity[0] * player.mass / self.timeStep
                 force[0] += 1 * (player.position[0] - CENTER_X) * player.linearVelocity[0] * player.mass / self.timeStep
 
-            player.linearDamping = 10.0
+            player.linearDamping = 20.0
             player.ApplyForceToCenter(force.tolist(), True)
             return
 
         if speed < max_speed:
-            player.linearDamping = 1.0
+            player.linearDamping = 5.0
             player.ApplyForceToCenter(force.tolist(), True)
         else:
-            player.linearDamping = 10.0
+            player.linearDamping = 20.0
             deltaVelocity = self.timeStep * force / player.mass
             if np.sqrt(np.sum((velocity + deltaVelocity) ** 2)) < speed:
                 player.ApplyForceToCenter(force.tolist(), True)
             else:
                 pass
+
+    def _apply_rotation_action_with_max_speed(self, player, action, is_player_one):
+        angle = np.asarray(player.angle)
+        if is_player_one:
+            torque = action * TORQUEMULTIPLIER
+        else:
+            torque = -action * TORQUEMULTIPLIER
+        if (is_player_one and abs(angle) > MAX_ANGLE):  # limit rotation
+            torque = 0
+            if player.angle * player.angularVelocity > 0:
+                torque = -0.1 * player.angularVelocity * player.mass / self.timeStep
+            torque += -0.1 * (player.angle) * player.mass / self.timeStep
+            player.angularDamping = 10.0
+        else:
+            player.angularDamping = 2.0
+        player.ApplyTorque(torque, True)
 
     def _get_obs(self):
         obs = np.hstack([
@@ -452,8 +492,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             [-self.player1.angularVelocity],
             -(self.puck.position - [CENTER_X, CENTER_Y]),
             -self.puck.linearVelocity
-        ])
-
+        ] + ([] if not self.keep_mode else [self.player1_has_puck, self.player2_has_puck]))
+        print(obs)
         return obs
 
     def _compute_reward(self):
@@ -466,7 +506,6 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                 r += 10
             else:  # opponent won
                 r -= 10
-
         return r
 
     def _get_info(self):
@@ -517,6 +556,17 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             self.puck.linearDamping = 0.05
         self.puck.angularSpeed = 0
 
+    def _keep_puck(self, player):
+        self.puck.position = player.position
+        self.puck.linearVelocity = player.linearVelocity
+
+    def _shoot(self, player):
+        # self.puck.position = player.position
+        self.puck.ApplyForceToCenter(
+            Box2D.b2Vec2(math.cos(player.angle),
+                         math.sin(player.angle)) *
+            self.puck.mass / self.timeStep * SHOOTFORCEMULTIPLIER, True)
+
     def discrete_to_continous_action(self, discrete_action):
         ''' converts discrete actions into continuous ones (for each player)
         The actions allow only one operation each timestep, e.g. X or Y or angle change.
@@ -532,19 +582,35 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         action_cont = [(discrete_action == 1) * -1 + (discrete_action == 2) * 1,  # player x
                        (discrete_action == 3) * -1 + (discrete_action == 4) * 1,  # player y
                        (discrete_action == 5) * -1 + (discrete_action == 6) * 1]  # player angle
+        if self.keep_mode:
+            action_cont.append(discrete_action == 7)
 
         return action_cont
 
     def step(self, action):
         action = np.clip(action, -1, +1).astype(np.float32)
 
-        self._apply_action_with_max_speed(self.player1, action[:2], 10, True)
-        # add her func to limit angle 
-        self.player1.ApplyTorque(action[2] * TORQUEMULTIPLIER, True)
-        self._apply_action_with_max_speed(self.player2, action[3:5], 10, False)
-        self.player2.ApplyTorque(-action[5] * TORQUEMULTIPLIER, True)
+        self._apply_translation_action_with_max_speed(self.player1, action[:2], 10, True)
+        self._apply_rotation_action_with_max_speed(self.player1, action[2], True)
+        player2_idx = 3 if self.keep_mode == False else 4
+        self._apply_translation_action_with_max_speed(self.player2, action[player2_idx:player2_idx + 2], 10, False)
+        self._apply_rotation_action_with_max_speed(self.player2, action[player2_idx + 2], False)
 
         self._limit_puck_speed()
+        if self.keep_mode:
+            if self.player1_has_puck > 1:
+                self._keep_puck(self.player1)
+                self.player1_has_puck -= 1
+            if self.player1_has_puck == 1 or action[3] > 0.5:  # shooting
+                self._shoot(self.player1)
+                self.player1_has_puck = 0
+            if self.player2_has_puck > 1:
+                self._keep_puck(self.player2)
+                self.player2_has_puck -= 1
+            if self.player2_has_puck == 1 or action[player2_idx+3] > 0.5:  # shooting
+                self._shoot(self.player2)
+                self.player2_has_puck = 0
+
         self.player1_contact_puck = False
 
         self.world.Step(self.timeStep, 6 * 30, 2 * 30)
@@ -559,7 +625,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                         dist_positions(self.puck.position, (W, H / 2)))
         self.time += 1
-        return obs, reward, self.done, info
+        return obs, reward + info["reward_touch_puck"] * 0.1, self.done, info
 
     def render(self, mode='human'):
         from gym.envs.classic_control import rendering
@@ -598,8 +664,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
 
 class BasicOpponent():
-    def __init__(self):
-        self.mode = 0
+    def __init__(self, weak=True, keep_mode=False):
+        self.weak = weak
+        self.keep_mode = keep_mode
 
     def act(self, obs, verbose=False):
         alpha = math.atan2(obs[2], obs[3])
@@ -612,24 +679,32 @@ class BasicOpponent():
         target_angle = p1[2]
 
         time_to_break = 0.1
-        kp = 10
+        if self.weak:
+            kp = 0.5
+        else:
+            kp = 10
         kd = 0.5
 
         # if ball flies towards our goal or very slowly away: try to catch it
-        if puckv[0] < 1.0:
+        if puckv[0] < 30.0 / SCALE:
             dist = np.sqrt(np.sum((p1[0:2] - puck) ** 2))
             # Am I behind the ball?
-            if p1[0] < puck[0] and abs(p1[1] - puck[1]) < 1.0:
+            if p1[0] < puck[0] and abs(p1[1] - puck[1]) < 30.0 / SCALE:
                 # Go and kick
                 target_pos = [puck[0] + 0.2, puck[1] + puckv[1] * dist * 0.1]
-                target_angle = np.random.uniform(-0.5, 0.5)  # calc proper angle here
+                target_angle =+ np.random.uniform(-0.8, 0.8) - 0.1 * target_angle  # calc proper angle here
             else:
                 # get behind the ball first
-                target_pos = [-7, puck[1]]
+                target_pos = [-210 / SCALE, puck[1]]
                 target_angle = 0
         else:  # go in front of the goal
-            target_pos = [-7, 0]
+            target_pos = [-210 / SCALE, 0]
             target_angle = 0
+        shoot = 0.0
+        if self.keep_mode and obs[17]>0 and obs[17]<7:
+            shoot = 1.0
+            print("opp shoot")
+
 
         target = np.asarray([target_pos[0], target_pos[1], target_angle])
         # use PD control to get to target
@@ -638,7 +713,11 @@ class BasicOpponent():
         if verbose:
             print(error, abs(error / (v1 + 0.01)), need_break)
 
-        return np.clip(error * [kp, kp, kp / 2] - v1 * need_break * [kd, kd, kd], -1, 1)
+        action = np.clip(error * [kp, kp / 5, kp / 2] - v1 * need_break * [kd, kd, kd], -1, 1)
+        if self.keep_mode:
+            return np.hstack([action, [shoot]])
+        else:
+            return action
 
 
 class HumanOpponent():
@@ -660,7 +739,7 @@ class HumanOpponent():
             65364: 3 if self.player == 1 else 4,  # Down arrow key
             119: 5 if self.player == 1 else 6,  # w
             115: 6 if self.player == 1 else 5,  # s
-
+            32: 7,  # space
         }
 
         print('Human Controls:')
@@ -670,6 +749,7 @@ class HumanOpponent():
         print(' down:\t\t\tarrow key down')
         print(' tilt clockwise:\tw')
         print(' tilt anti-clockwise:\ts')
+        print(' shoot :\tspace')
 
     def key_press(self, key, mod):
         if key in self.key_action_mapping:
@@ -685,12 +765,33 @@ class HumanOpponent():
         return self.env.discrete_to_continous_action(self.a)
 
 
+class HockeyEnv_BasicOpponent(HockeyEnv):
+
+    def __init__(self, mode=HockeyEnv.NORMAL, keep_mode=False):
+        super().__init__(mode=mode, keep_mode=keep_mode)
+        self.opponent = BasicOpponent()
+        # linear force in (x,y)-direction and torque
+        self.action_space = spaces.Box(-1, +1, (3,), dtype=np.float32)
+
+    def step(self, action):
+        ob2 = self.obs_agent_two()
+        a2 = self.opponent.act(ob2)
+        action2 = np.hstack([action, a2])
+        return super().step(action2)
+
+
 from gym.envs.registration import register
 
 try:
     register(
-        id='LaserHockey-v0',
-        entry_point='laser_hockey_env.laser_hockey_env:LaserHockeyEnv',
+        id='Hockey-v0',
+        # entry_point='laser_hockey_env.hockey_env:HockeyEnv',
+        entry_point='hockey_env:HockeyEnv',
+    )
+    register(
+        id='Hockey-One-v0',
+        # entry_point='laser_hockey_env.hockey_env:HockeyEnv',
+        entry_point='hockey_env:HockeyEnv_BasicOpponent',
     )
 except Exception as e:
     print(e)
