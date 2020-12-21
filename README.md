@@ -8,10 +8,14 @@ This repository contains two version of a hockey-like game
 
 or add the following line to your Pipfile
 
-``laserhockeyenv = {editable = true, git = "https://git@github.com/martius-lab/laser-hockey-env.git"}``
+``laserhockey = {editable = true, git = "https://git@github.com/martius-lab/laser-hockey-env.git"}``
 
 
 ## HockeyEnv
+
+![Screenshot](assets/hockeyenv1.png)
+
+``laserhockey.hockey_env.HockeyEnv``
 
 A two-player (one per team) hockey environment.
 For our Reinforcment Learning Lecture @ Uni-Tuebingen.
