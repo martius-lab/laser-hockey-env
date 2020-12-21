@@ -780,14 +780,12 @@ from gym.envs.registration import register
 try:
     register(
         id='Hockey-v0',
-        # entry_point='laser_hockey_env.hockey_env:HockeyEnv',
-        entry_point='hockey_env:HockeyEnv',
+        entry_point='laserhockey.hockey_env:HockeyEnv',
         kwargs={'mode': 0}
     )
     register(
         id='Hockey-One-v0',
-        # entry_point='laser_hockey_env.hockey_env:HockeyEnv',
-        entry_point='hockey_env:HockeyEnv_BasicOpponent',
+        entry_point='laserhockey.hockey_env:HockeyEnv_BasicOpponent',
         kwargs={'mode' : 0, 'weak_opponent': False}
     )
 except Exception as e:
