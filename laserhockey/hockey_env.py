@@ -508,12 +508,12 @@ class HockeyEnv(gym.Env, EzPickle):
 
     def _get_info(self):
         # different proxy rewards:
-        # Proxy reward for being close to puck in the own half
+        # Proxy reward/penalty for not being close to puck in the own half when puck is flying towards goal (not to opponent)
         reward_closeness_to_puck = 0
-        if self.puck.position[0] < CENTER_X:
+        if self.puck.position[0] < CENTER_X and self.puck.linearVelocity[0] < 0 :
             dist_to_puck = dist_positions(self.player1.position, self.puck.position)
-            max_dist = 10.
-            max_reward = -5.  # max (negative) reward through this proxy
+            max_dist = 250./SCALE
+            max_reward = -30.  # max (negative) reward through this proxy
             factor = max_reward / (max_dist * self.max_timesteps / 2)
             reward_closeness_to_puck += dist_to_puck * factor  # Proxy reward for being close to puck in the own half
         # Proxy reward: touch puck
@@ -522,7 +522,6 @@ class HockeyEnv(gym.Env, EzPickle):
             reward_touch_puck = 1.
 
         # puck is flying in the right direction
-        reward_puck_direction = 0
         max_reward = 1.
         factor = max_reward / (self.max_timesteps * MAX_PUCK_SPEED)
         reward_puck_direction = self.puck.linearVelocity[0] * factor  # Puck flies right is good and left not
@@ -621,7 +620,7 @@ class HockeyEnv(gym.Env, EzPickle):
         self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                         dist_positions(self.puck.position, (W, H / 2)))
         self.time += 1
-        return obs, reward + info["reward_touch_puck"] * 0.1, self.done, info
+        return obs, reward + info["reward_closeness_to_puck"], self.done, info
 
     def render(self, mode='human'):
         from gym.envs.classic_control import rendering
@@ -756,7 +755,7 @@ class HumanOpponent():
                 self.a = 0
 
     def act(self, obs):
-        print(self.a)
+        # print(self.a)
         return self.env.discrete_to_continous_action(self.a)
 
 
