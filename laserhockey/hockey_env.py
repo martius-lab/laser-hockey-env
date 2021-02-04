@@ -410,6 +410,24 @@ class HockeyEnv(gym.Env, EzPickle):
 
     return obs
 
+  def _check_boundaries(self, force, player, is_player_one):
+    if (is_player_one and player.position[0] < W / 2 - 210 / SCALE and force[0] < 0) \
+        or (not is_player_one and player.position[0] > W / 2 + 210 / SCALE and force[0] > 0) \
+        or (is_player_one and player.position[0] > W / 2 and force[0] > 0) \
+        or (not is_player_one and player.position[0] < W / 2 and force[0] < 0): # Do not leave playing area to the left/right
+        vel = player.linearVelocity
+        player.linearVelocity[0] = 0
+        force[0] = -vel[0]
+    if (is_player_one and player.position[1] > H - 1.2 and force[1] > 0) \
+        or (not is_player_one and player.position[1] > H - 1.2 and force[1] > 0) \
+        or (is_player_one and player.position[1] < 1.2 and force[1] < 0) \
+        or (not is_player_one and player.position[1] < 1.2 and force[1] < 0): # Do not leave playing area to the top/bottom
+        vel = player.linearVelocity
+        player.linearVelocity[1] = 0
+        force[1] = -vel[1]
+
+    return force
+
   def _apply_translation_action_with_max_speed(self, player, action, max_speed, is_player_one):
     velocity = np.asarray(player.linearVelocity)
     speed = np.sqrt(np.sum((velocity) ** 2))
@@ -432,17 +450,18 @@ class HockeyEnv(gym.Env, EzPickle):
         force[0] += 1 * (player.position[0] - CENTER_X) * player.linearVelocity[0] * player.mass / self.timeStep
 
       player.linearDamping = 20.0
-      player.ApplyForceToCenter(force.tolist(), True)
+
+      player.ApplyForceToCenter(self._check_boundaries(force, player, is_player_one).tolist(), True)
       return
 
     if speed < max_speed:
       player.linearDamping = 5.0
-      player.ApplyForceToCenter(force.tolist(), True)
+      player.ApplyForceToCenter(self._check_boundaries(force.tolist(), player, is_player_one), True)
     else:
       player.linearDamping = 20.0
       deltaVelocity = self.timeStep * force / player.mass
       if np.sqrt(np.sum((velocity + deltaVelocity) ** 2)) < speed:
-        player.ApplyForceToCenter(force.tolist(), True)
+        player.ApplyForceToCenter(self._check_boundaries(force.tolist(), player, is_player_one), True)
       else:
         pass
 
