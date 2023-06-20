@@ -659,6 +659,7 @@ class HockeyEnv(gym.Env, EzPickle):
       )
 
     if self.screen is None and self.render_mode == "human":
+      print("iunit")
       pygame.init()
       pygame.display.init()
       self.screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
@@ -673,14 +674,13 @@ class HockeyEnv(gym.Env, EzPickle):
       for f in obj.fixtures:
         trans = f.body.transform
         if type(f.shape) is circleShape:
-          t = rendering.Transform(translation=trans * f.shape.pos)
-          pygame.draw_circle(self.surf, f.shape.radius, 20, color=obj.color1).add_attr(t)
-          pygame.draw_circle(self.surf, f.shape.radius, 20, color=obj.color2, filled=False, linewidth=2).add_attr(t)
+          pygame.draw.circle(self.surf, radius = f.shape.radius, width = 0, center = trans * f.shape.pos, color=obj.color1)
+          pygame.draw.circle(self.surf, radius = f.shape.radius, width=2, center = trans * f.shape.pos, color=obj.color2) # 20 missing
         else:
           path = [trans * v for v in f.shape.vertices]
-          pygame.draw_polygon(self.surf, path, color=obj.color1)
+          pygame.draw.polygon(self.surf, points = path, color=obj.color1, width=0)
           path.append(path[0])
-          pygame.draw_polyline(self.surf, path, color=obj.color2, linewidth=2)
+          pygame.draw.polygon(self.surf, points = path, color=obj.color2, width=2)
 
     # self.score_label.draw()
     self.surf = pygame.transform.flip(self.surf, False, True)
