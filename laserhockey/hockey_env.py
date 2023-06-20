@@ -5,9 +5,9 @@ import Box2D
 # noinspection PyUnresolvedReferences
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
 
-import gym
-from gym import spaces
-from gym.utils import seeding, EzPickle
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.utils import seeding, EzPickle
 
 # import pyglet
 # from pyglet import gl
@@ -407,8 +407,8 @@ class HockeyEnv(gym.Env, EzPickle):
     self.drawlist.extend([self.player1, self.player2, self.puck])
 
     obs = self._get_obs()
-
-    return obs
+    info = self._get_info()
+    return obs, info
 
   def _check_boundaries(self, force, player, is_player_one):
     if (is_player_one and player.position[0] < W / 2 - 210 / SCALE and force[0] < 0) \
@@ -638,10 +638,10 @@ class HockeyEnv(gym.Env, EzPickle):
     self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                     dist_positions(self.puck.position, (W, H / 2)))
     self.time += 1
-    return obs, reward + info["reward_closeness_to_puck"], self.done, info
+    return obs, reward + info["reward_closeness_to_puck"], self.done, False, info
 
   def render(self, mode='human'):
-    from gym.envs.classic_control import rendering
+    from gymnasium.envs.classic_control import rendering
     if self.viewer is None:
       self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
       self.viewer.set_bounds(0, VIEWPORT_W / SCALE, 0, VIEWPORT_H / SCALE)
@@ -792,7 +792,7 @@ class HockeyEnv_BasicOpponent(HockeyEnv):
     return super().step(action2)
 
 
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
 
 try:
   register(
