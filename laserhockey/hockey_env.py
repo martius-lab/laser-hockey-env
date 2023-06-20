@@ -92,7 +92,10 @@ class HockeyEnv(gym.Env, EzPickle):
         """
     EzPickle.__init__(self)
     self.seed()
-    self.viewer = None
+    self.screen: pygame.Surface = None
+    self.clock = None
+    self.surf = None
+    self.isopen = True
     self.mode = mode
     self.keep_mode = keep_mode
     self.player1_has_puck = 0
@@ -641,40 +644,65 @@ class HockeyEnv(gym.Env, EzPickle):
     return obs, reward + info["reward_closeness_to_puck"], self.done, False, info
 
   def render(self, mode='human'):
-    from gymnasium.envs.classic_control import rendering
-    if self.viewer is None:
-      self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
-      self.viewer.set_bounds(0, VIEWPORT_W / SCALE, 0, VIEWPORT_H / SCALE)
-      # self.score_label = pyglet.text.Label('0000', font_size=50,
-      #                                      x=VIEWPORT_W/2, y=VIEWPORT_H/2, anchor_x='center', anchor_y='center',
-      #                                      color=(0, 0, 0, 255))
+    if mode is None:
+      gym.logger.warn(
+        "the render method needs a rendering mode"
+      )
+      return
 
-    # arr = None
-    # win = self.viewer.window
-    # win.clear()
-    # gl.glViewport(0, 0, VIEWPORT_W, VIEWPORT_H)
+    try:
+      import pygame
+      from pygame import gfxdraw
+    except ImportError:
+      raise DependencyNotInstalled(
+        "pygame is not installed, run `pip install gym[box2d]`"
+      )
+
+    if self.screen is None and self.render_mode == "human":
+      pygame.init()
+      pygame.display.init()
+      self.screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
+    if self.clock is None:
+      self.clock = pygame.time.Clock()
+
+    self.surf = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
+    pygame.transform.scale(self.surf, (SCALE, SCALE))
+    pygame.draw.rect(self.surf, (255, 255, 255), self.surf.get_rect())
+
     for obj in self.drawlist:
       for f in obj.fixtures:
         trans = f.body.transform
         if type(f.shape) is circleShape:
           t = rendering.Transform(translation=trans * f.shape.pos)
-          self.viewer.draw_circle(f.shape.radius, 20, color=obj.color1).add_attr(t)
-          self.viewer.draw_circle(f.shape.radius, 20, color=obj.color2, filled=False, linewidth=2).add_attr(t)
+          pygame.draw_circle(self.surf, f.shape.radius, 20, color=obj.color1).add_attr(t)
+          pygame.draw_circle(self.surf, f.shape.radius, 20, color=obj.color2, filled=False, linewidth=2).add_attr(t)
         else:
           path = [trans * v for v in f.shape.vertices]
-          self.viewer.draw_polygon(path, color=obj.color1)
+          pygame.draw_polygon(self.surf, path, color=obj.color1)
           path.append(path[0])
-          self.viewer.draw_polyline(path, color=obj.color2, linewidth=2)
+          pygame.draw_polyline(self.surf, path, color=obj.color2, linewidth=2)
 
     # self.score_label.draw()
+    self.surf = pygame.transform.flip(self.surf, False, True)
 
-    return self.viewer.render(return_rgb_array=mode == 'rgb_array')
+    if self.render_mode == "human":
+      assert self.screen is not None
+      self.screen.blit(self.surf, (0, 0))
+      pygame.event.pump()
+      self.clock.tick(self.metadata["render_fps"])
+      pygame.display.flip()
+    elif self.render_mode == "rgb_array":
+      return np.transpose(
+        np.array(pygame.surfarray.pixels3d(self.surf)), axes=(1, 0, 2)
+      )
 
   def close(self):
-    if self.viewer is not None:
-      self.viewer.close()
-      self.viewer = None
+    if self.screen is not None:
+      import pygame
 
+      pygame.display.quit()
+      pygame.quit()
+      self.isopen = False
 
 class BasicOpponent():
   def __init__(self, weak=True, keep_mode=True):
@@ -737,7 +765,7 @@ class HumanOpponent():
     self.player = player
     self.a = 0
 
-    if env.viewer is None:
+    if env.screen is None:
       env.render()
 
     self.env.viewer.window.on_key_press = self.key_press
