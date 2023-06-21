@@ -2,7 +2,6 @@ import math
 import numpy as np
 
 import Box2D
-import pygame
 # noinspection PyUnresolvedReferences
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
 
@@ -94,7 +93,7 @@ class HockeyEnv(gym.Env, EzPickle):
         """
     EzPickle.__init__(self)
     self.seed()
-    self.screen: pygame.Surface = None
+    self.screen = None
     self.clock = None
     self.surf = None
     self.isopen = True
@@ -759,6 +758,7 @@ class BasicOpponent():
 
 class HumanOpponent():
   def __init__(self, env, player=1):
+    import pygame
     self.env = env
     self.player = player
     self.a = 0
@@ -786,6 +786,7 @@ class HumanOpponent():
     print(' shoot :\tspace')
 
   def act(self, obs):
+    import pygame
     keys = pygame.key.get_pressed()
     action = 0
     for key in self.key_action_mapping.keys():
@@ -795,7 +796,6 @@ class HumanOpponent():
 
 
 class HockeyEnv_BasicOpponent(HockeyEnv):
-
   def __init__(self, mode=HockeyEnv.NORMAL, weak_opponent=False):
     super().__init__(mode=mode, keep_mode=True)
     self.opponent = BasicOpponent(weak=weak_opponent)

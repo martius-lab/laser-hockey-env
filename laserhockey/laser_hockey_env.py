@@ -7,6 +7,7 @@ from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revolute
 
 import gymnasium as gym
 from gymnasium import spaces
+from gymnasium.error import DependencyNotInstalled
 from gymnasium.utils import seeding, EzPickle
 
 # import pyglet
@@ -60,7 +61,7 @@ class ContactDetector(contactListener):
 class LaserHockeyEnv(gym.Env, EzPickle):
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second': FPS
+        'render_fps': FPS
     }
 
     continuous = False
@@ -74,7 +75,10 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         """
         EzPickle.__init__(self)
         self.seed()
-        self.viewer = None
+        self.screen = None
+        self.clock = None
+        self.surf = None
+        self.isopen = True
         self.mode = mode
 
         self.world = Box2D.b2World([0, 0])
@@ -216,8 +220,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (0.8, 0.8, 0.8)
-            objs[-1].color2 = (0.8, 0.8, 0.8)
+            objs[-1].color1 = (204, 204, 204)
+            objs[-1].color2 = (204, 204, 204)
 
             objs.append(self.world.CreateStaticBody(
                 position=(W / 2, H / 2),
@@ -227,8 +231,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (0.8, 0.8, 0.8)
-            objs[-1].color2 = (0.8, 0.8, 0.8)
+            objs[-1].color1 = (204, 204, 204)
+            objs[-1].color2 = (204, 204, 204)
 
             objs.append(self.world.CreateStaticBody(
                 position=(W / 2 - 250 / SCALE, H / 2),
@@ -238,8 +242,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (255. / 255, 204. / 255, 191. / 255)
-            objs[-1].color2 = (255. / 255, 204. / 255, 191. / 255)
+            objs[-1].color1 = (255, 204, 191)
+            objs[-1].color2 = (255, 204, 191)
 
             poly = [(0, 100), (100, 100), (100, -100), (0, -100)]
             objs.append(self.world.CreateStaticBody(
@@ -250,8 +254,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (1, 1, 1)
-            objs[-1].color2 = (1, 1, 1)
+            objs[-1].color1 = (255, 255, 255)
+            objs[-1].color2 = (255, 255, 255)
 
             objs.append(self.world.CreateStaticBody(
                 position=(W / 2 + 250 / SCALE, H / 2),
@@ -261,8 +265,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (255. / 255, 204. / 255, 191. / 255)
-            objs[-1].color2 = (255. / 255, 204. / 255, 191. / 255)
+            objs[-1].color1 = (255, 204, 191)
+            objs[-1].color2 = (255, 204, 191)
 
             poly = [(100, 100), (0, 100), (0, -100), (100, -100)]
             objs.append(self.world.CreateStaticBody(
@@ -273,8 +277,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x0,
                     maskBits=0x0)
             ))
-            objs[-1].color1 = (1, 1, 1)
-            objs[-1].color2 = (1, 1, 1)
+            objs[-1].color1 = (255, 255, 255)
+            objs[-1].color2 = (255, 255, 255)
 
             return objs
 
@@ -314,8 +318,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                     categoryBits=0x010,
                     maskBits=0x0010)]
         )
-        goal.color1 = (1, 1, 1)
-        goal.color2 = (1, 1, 1)
+        goal.color1 = (255, 255, 255)
+        goal.color2 = (255, 255, 255)
 
         return goal
 
@@ -351,19 +355,19 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         # Create players
         self.player1 = self._create_player(
             (W / 5, H / 2),
-            (1, 0, 0),
+            (204, 0, 0),
             False
         )
         if self.mode != self.NORMAL:
             self.player2 = self._create_player(
                 (4 * W / 5 + self.r_uniform(-W / 3, W / 6), H / 2 + self.r_uniform(-H / 4, H / 4)),
-                (0, 0, 1),
+                (0, 0, 204),
                 True
             )
         else:
             self.player2 = self._create_player(
                 (4 * W / 5, H / 2),
-                (0, 0, 1),
+                (0, 0, 204),
                 True
             )
         if self.mode == self.NORMAL or self.mode == self.TRAIN_SHOOTING:
@@ -563,40 +567,63 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         return obs, reward, self.done, False, info
 
     def render(self, mode='human'):
-        from gymnasium.envs.classic_control import rendering
-        if self.viewer is None:
-            self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
-            self.viewer.set_bounds(0, VIEWPORT_W / SCALE, 0, VIEWPORT_H / SCALE)
-            # self.score_label = pyglet.text.Label('0000', font_size=50,
-            #                                      x=VIEWPORT_W/2, y=VIEWPORT_H/2, anchor_x='center', anchor_y='center',
-            #                                      color=(0, 0, 0, 255))
+        if mode is None:
+            gym.logger.warn(
+                "the render method needs a rendering mode"
+            )
+            return
+        try:
+            import pygame
+            from pygame import gfxdraw
+        except ImportError:
+            raise DependencyNotInstalled(
+                "pygame is not installed, run `pip install gym[box2d]`"
+            )
+        if self.screen is None and mode == "human":
+            pygame.init()
+            pygame.display.init()
+            self.screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
 
-        # arr = None
-        # win = self.viewer.window
-        # win.clear()
-        # gl.glViewport(0, 0, VIEWPORT_W, VIEWPORT_H)
+        self.surf = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
+        pygame.draw.rect(self.surf, (255, 255, 255), self.surf.get_rect())
+
         for obj in self.drawlist:
             for f in obj.fixtures:
                 trans = f.body.transform
                 if type(f.shape) is circleShape:
-                    t = rendering.Transform(translation=trans * f.shape.pos)
-                    self.viewer.draw_circle(f.shape.radius, 20, color=obj.color1).add_attr(t)
-                    self.viewer.draw_circle(f.shape.radius, 20, color=obj.color2, filled=False, linewidth=2).add_attr(t)
+                    pygame.draw.circle(self.surf, radius=f.shape.radius * SCALE, width=0,
+                                       center=trans * f.shape.pos * SCALE, color=obj.color1)
+                    pygame.draw.circle(self.surf, radius=f.shape.radius * SCALE, width=2,
+                                       center=trans * f.shape.pos * SCALE, color=obj.color2)
                 else:
-                    path = [trans * v for v in f.shape.vertices]
-                    self.viewer.draw_polygon(path, color=obj.color1)
+                    path = [trans * v * SCALE for v in f.shape.vertices]
+                    pygame.draw.polygon(self.surf, points=path, color=obj.color1, width=0)
                     path.append(path[0])
-                    self.viewer.draw_polyline(path, color=obj.color2, linewidth=2)
+                    pygame.draw.polygon(self.surf, points=path, color=obj.color2, width=2)
 
         # self.score_label.draw()
+        self.surf = pygame.transform.flip(self.surf, False, True)
 
-        return self.viewer.render(return_rgb_array=mode == 'rgb_array')
+        if mode == "human":
+            assert self.screen is not None
+            self.screen.blit(self.surf, (0, 0))
+            pygame.event.pump()
+            self.clock.tick(self.metadata["render_fps"])
+            pygame.display.flip()
+        elif mode == "rgb_array":
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(self.surf)), axes=(1, 0, 2)
+            )
 
     def close(self):
-        if self.viewer is not None:
-            self.viewer.close()
-            self.viewer = None
+        if self.screen is not None:
+            import pygame
 
+            pygame.display.quit()
+            pygame.quit()
+            self.isopen = False
 
 class BasicOpponent():
     def __init__(self):
@@ -642,49 +669,8 @@ class BasicOpponent():
         return np.clip(error * [kp, kp, kp / 2] - v1 * need_break * [kd, kd, kd], -1, 1)
 
 
-class HumanOpponent():
-    def __init__(self, env, player=1):
-        self.env = env
-        self.player = player
-        self.a = 0
-
-        if env.viewer is None:
-            env.render()
-
-        self.env.viewer.window.on_key_press = self.key_press
-        self.env.viewer.window.on_key_release = self.key_release
-
-        self.key_action_mapping = {
-            65361: 1 if self.player == 1 else 2,  # Left arrow key
-            65362: 4 if self.player == 1 else 3,  # Up arrow key
-            65363: 2 if self.player == 1 else 1,  # Right arrow key
-            65364: 3 if self.player == 1 else 4,  # Down arrow key
-            119: 5 if self.player == 1 else 6,  # w
-            115: 6 if self.player == 1 else 5,  # s
-
-        }
-
-        print('Human Controls:')
-        print(' left:\t\t\tleft arrow key left')
-        print(' right:\t\t\tarrow key right')
-        print(' up:\t\t\tarrow key up')
-        print(' down:\t\t\tarrow key down')
-        print(' tilt clockwise:\tw')
-        print(' tilt anti-clockwise:\ts')
-
-    def key_press(self, key, mod):
-        if key in self.key_action_mapping:
-            self.a = self.key_action_mapping[key]
-
-    def key_release(self, key, mod):
-        if key in self.key_action_mapping:
-            a = self.key_action_mapping[key]
-            if self.a == a:
-                self.a = 0
-
-    def act(self, obs):
-        return self.env.discrete_to_continous_action(self.a)
-
+# class HumanOpponent()
+# use  HumanOpponent of HockeyEnv
 
 from gymnasium.envs.registration import register
 

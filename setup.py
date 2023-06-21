@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='laserhockey',
-      version='1.1',
+      version='2.0',
       description='Simple Hockey Environments',
       url='https://github.com/martius-lab',
       author='Georg Martius, MPI-IS Tuebingen, Autonomous Learning',
