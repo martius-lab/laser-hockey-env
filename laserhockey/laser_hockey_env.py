@@ -5,9 +5,9 @@ import Box2D
 # noinspection PyUnresolvedReferences
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
 
-import gym
-from gym import spaces
-from gym.utils import seeding, EzPickle
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.utils import seeding, EzPickle
 
 # import pyglet
 # from pyglet import gl
@@ -383,8 +383,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.drawlist.extend([self.player1, self.player2, self.puck])
 
         obs = self._get_obs()
+        info = self._get_info()
 
-        return obs
+        return obs, info
 
     def _apply_action_with_max_speed(self, player, action, max_speed, is_player_one):
         velocity = np.asarray(player.linearVelocity)
@@ -539,7 +540,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         action = np.clip(action, -1, +1).astype(np.float32)
 
         self._apply_action_with_max_speed(self.player1, action[:2], 10, True)
-        # add her func to limit angle 
+        # add her func to limit angle
         self.player1.ApplyTorque(action[2] * TORQUEMULTIPLIER, True)
         self._apply_action_with_max_speed(self.player2, action[3:5], 10, False)
         self.player2.ApplyTorque(-action[5] * TORQUEMULTIPLIER, True)
@@ -559,10 +560,10 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                         dist_positions(self.puck.position, (W, H / 2)))
         self.time += 1
-        return obs, reward, self.done, info
+        return obs, reward, self.done, False, info
 
     def render(self, mode='human'):
-        from gym.envs.classic_control import rendering
+        from gymnasium.envs.classic_control import rendering
         if self.viewer is None:
             self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
             self.viewer.set_bounds(0, VIEWPORT_W / SCALE, 0, VIEWPORT_H / SCALE)
@@ -685,7 +686,7 @@ class HumanOpponent():
         return self.env.discrete_to_continous_action(self.a)
 
 
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
 
 try:
     register(
