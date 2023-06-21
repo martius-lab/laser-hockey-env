@@ -9,5 +9,5 @@ setup(name='laserhockey',
       license='MIT',
       packages=['laserhockey'],
       python_requires='>=3.6',
-      install_requires=['gymnasium', 'numpy', 'box2d'],
+      install_requires=['gymnasium', 'numpy', 'box2d-py','pygame'],
       zip_safe=False)

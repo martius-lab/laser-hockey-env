@@ -2,11 +2,13 @@ import math
 import numpy as np
 
 import Box2D
+import pygame
 # noinspection PyUnresolvedReferences
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
 
 import gymnasium as gym
 from gymnasium import spaces
+from gymnasium.error import DependencyNotInstalled
 from gymnasium.utils import seeding, EzPickle
 
 # import pyglet
@@ -77,7 +79,7 @@ class ContactDetector(contactListener):
 class HockeyEnv(gym.Env, EzPickle):
   metadata = {
     'render.modes': ['human', 'rgb_array'],
-    'video.frames_per_second': FPS
+    'render_fps': FPS
   }
 
   continuous = False
@@ -87,7 +89,7 @@ class HockeyEnv(gym.Env, EzPickle):
 
   def __init__(self, keep_mode=True, mode=NORMAL, verbose=False):
     """ mode: is the game mode: NORMAL, TRAIN_SHOOTING, TRAIN_DEFENSE,
-        keep_mode: whether the puck gets catched by
+        keep_mode: whether the puck gets catched by the player
         it can be changed later using the reset function
         """
     EzPickle.__init__(self)
@@ -243,8 +245,8 @@ class HockeyEnv(gym.Env, EzPickle):
           categoryBits=0x0,
           maskBits=0x0)
       ))
-      objs[-1].color1 = (0.8, 0.8, 0.8)
-      objs[-1].color2 = (0.8, 0.8, 0.8)
+      objs[-1].color1 = (204, 204, 204)
+      objs[-1].color2 = (204, 204, 204)
 
       # left goal
       objs.append(self.world.CreateStaticBody(
@@ -255,7 +257,7 @@ class HockeyEnv(gym.Env, EzPickle):
           categoryBits=0x0,
           maskBits=0x0)
       ))
-      orange = (239. / 255, 203. / 255, 138. / 255)
+      orange = (239, 203, 138)
       objs[-1].color1 = orange
       objs[-1].color2 = orange
 
@@ -268,8 +270,8 @@ class HockeyEnv(gym.Env, EzPickle):
           categoryBits=0x0,
           maskBits=0x0)
       ))
-      objs[-1].color1 = (1, 1, 1)
-      objs[-1].color2 = (1, 1, 1)
+      objs[-1].color1 = (255, 255, 255)
+      objs[-1].color2 = (255, 255, 255)
 
       # right goal
       objs.append(self.world.CreateStaticBody(
@@ -292,8 +294,8 @@ class HockeyEnv(gym.Env, EzPickle):
           categoryBits=0x0,
           maskBits=0x0)
       ))
-      objs[-1].color1 = (1, 1, 1)
-      objs[-1].color2 = (1, 1, 1)
+      objs[-1].color1 = (255, 255, 255)
+      objs[-1].color2 = (255, 255, 255)
 
       return objs
 
@@ -334,8 +336,8 @@ class HockeyEnv(gym.Env, EzPickle):
           categoryBits=0x010,
           maskBits=0x0010)]
     )
-    goal.color1 = (.5, .5, .5)
-    goal.color2 = (.5, .5, .5)
+    goal.color1 = (128, 128, 128)
+    goal.color2 = (128, 128, 128)
 
     return goal
 
@@ -371,13 +373,13 @@ class HockeyEnv(gym.Env, EzPickle):
     self.goal_player_2 = self._create_goal((W / 2 + 245 / SCALE + 10 / SCALE, H / 2), poly)
 
     # Create players
-    red = (235. / 255., 98. / 255., 53. / 255.)
+    red = (235, 98, 53)
     self.player1 = self._create_player(
       (W / 5, H / 2),
       red,
       False
     )
-    blue = (93. / 255, 158. / 255., 199. / 255.)
+    blue = (93, 158, 199)
     if self.mode != self.NORMAL:
       self.player2 = self._create_player(
         (4 * W / 5 + self.r_uniform(-W / 3, W / 6), H / 2 + self.r_uniform(-H / 4, H / 4)),
@@ -649,7 +651,6 @@ class HockeyEnv(gym.Env, EzPickle):
         "the render method needs a rendering mode"
       )
       return
-
     try:
       import pygame
       from pygame import gfxdraw
@@ -657,9 +658,7 @@ class HockeyEnv(gym.Env, EzPickle):
       raise DependencyNotInstalled(
         "pygame is not installed, run `pip install gym[box2d]`"
       )
-
-    if self.screen is None and self.render_mode == "human":
-      print("iunit")
+    if self.screen is None and mode == "human":
       pygame.init()
       pygame.display.init()
       self.screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
@@ -667,17 +666,16 @@ class HockeyEnv(gym.Env, EzPickle):
       self.clock = pygame.time.Clock()
 
     self.surf = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
-    pygame.transform.scale(self.surf, (SCALE, SCALE))
     pygame.draw.rect(self.surf, (255, 255, 255), self.surf.get_rect())
 
     for obj in self.drawlist:
       for f in obj.fixtures:
         trans = f.body.transform
         if type(f.shape) is circleShape:
-          pygame.draw.circle(self.surf, radius = f.shape.radius, width = 0, center = trans * f.shape.pos, color=obj.color1)
-          pygame.draw.circle(self.surf, radius = f.shape.radius, width=2, center = trans * f.shape.pos, color=obj.color2) # 20 missing
+          pygame.draw.circle(self.surf, radius = f.shape.radius * SCALE, width = 0, center = trans * f.shape.pos * SCALE, color=obj.color1)
+          pygame.draw.circle(self.surf, radius = f.shape.radius * SCALE, width = 2, center = trans * f.shape.pos * SCALE, color=obj.color2)
         else:
-          path = [trans * v for v in f.shape.vertices]
+          path = [trans * v * SCALE for v in f.shape.vertices]
           pygame.draw.polygon(self.surf, points = path, color=obj.color1, width=0)
           path.append(path[0])
           pygame.draw.polygon(self.surf, points = path, color=obj.color2, width=2)
@@ -685,13 +683,13 @@ class HockeyEnv(gym.Env, EzPickle):
     # self.score_label.draw()
     self.surf = pygame.transform.flip(self.surf, False, True)
 
-    if self.render_mode == "human":
+    if mode == "human":
       assert self.screen is not None
       self.screen.blit(self.surf, (0, 0))
       pygame.event.pump()
       self.clock.tick(self.metadata["render_fps"])
       pygame.display.flip()
-    elif self.render_mode == "rgb_array":
+    elif mode == "rgb_array":
       return np.transpose(
         np.array(pygame.surfarray.pixels3d(self.surf)), axes=(1, 0, 2)
       )
@@ -768,17 +766,14 @@ class HumanOpponent():
     if env.screen is None:
       env.render()
 
-    self.env.viewer.window.on_key_press = self.key_press
-    self.env.viewer.window.on_key_release = self.key_release
-
     self.key_action_mapping = {
-      65361: 1 if self.player == 1 else 2,  # Left arrow key
-      65362: 4 if self.player == 1 else 3,  # Up arrow key
-      65363: 2 if self.player == 1 else 1,  # Right arrow key
-      65364: 3 if self.player == 1 else 4,  # Down arrow key
-      119: 5,  # w
-      115: 6,  # s
-      32: 7,  # space
+      pygame.K_LEFT: 1 if self.player == 1 else 2,  # Left arrow key
+      pygame.K_UP: 4 if self.player == 1 else 3,  # Up arrow key
+      pygame.K_RIGHT: 2 if self.player == 1 else 1,  # Right arrow key
+      pygame.K_DOWN: 3 if self.player == 1 else 4,  # Down arrow key
+      pygame.K_w: 5,  # w
+      pygame.K_s: 6,  # s
+      pygame.K_SPACE: 7,  # space
     }
 
     print('Human Controls:')
@@ -790,19 +785,13 @@ class HumanOpponent():
     print(' tilt anti-clockwise:\ts')
     print(' shoot :\tspace')
 
-  def key_press(self, key, mod):
-    if key in self.key_action_mapping:
-      self.a = self.key_action_mapping[key]
-
-  def key_release(self, key, mod):
-    if key in self.key_action_mapping:
-      a = self.key_action_mapping[key]
-      if self.a == a:
-        self.a = 0
-
   def act(self, obs):
-    # print(self.a)
-    return self.env.discrete_to_continous_action(self.a)
+    keys = pygame.key.get_pressed()
+    action = 0
+    for key in self.key_action_mapping.keys():
+      if keys[key]:
+        action = self.key_action_mapping[key]
+    return self.env.discrete_to_continous_action(action)
 
 
 class HockeyEnv_BasicOpponent(HockeyEnv):
