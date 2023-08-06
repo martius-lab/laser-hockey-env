@@ -422,10 +422,8 @@ class HockeyEnv(gym.Env, EzPickle):
         vel = player.linearVelocity
         player.linearVelocity[0] = 0
         force[0] = -vel[0]
-    if (is_player_one and player.position[1] > H - 1.2 and force[1] > 0) \
-        or (not is_player_one and player.position[1] > H - 1.2 and force[1] > 0) \
-        or (is_player_one and player.position[1] < 1.2 and force[1] < 0) \
-        or (not is_player_one and player.position[1] < 1.2 and force[1] < 0): # Do not leave playing area to the top/bottom
+    if (player.position[1] > H - 1.2 and force[1] > 0) \
+        or (player.position[1] < 1.2 and force[1] < 0): # Do not leave playing area to the top/bottom
         vel = player.linearVelocity
         player.linearVelocity[1] = 0
         force[1] = -vel[1]
@@ -446,8 +444,7 @@ class HockeyEnv(gym.Env, EzPickle):
       if is_player_one:
         if player.linearVelocity[0] > 0:
           force[0] = -2 * player.linearVelocity[0] * player.mass / self.timeStep
-        force[0] += -1 * (player.position[0] - CENTER_X) * player.linearVelocity[
-          0] * player.mass / self.timeStep
+        force[0] += -1 * (player.position[0] - CENTER_X) * player.linearVelocity[0] * player.mass / self.timeStep
       else:
         if player.linearVelocity[0] < 0:
           force[0] = -2 * player.linearVelocity[0] * player.mass / self.timeStep
@@ -616,12 +613,20 @@ class HockeyEnv(gym.Env, EzPickle):
     self.puck.position = player.position
     self.puck.linearVelocity = player.linearVelocity
 
-  def _shoot(self, player):
+  def _shoot(self, player, is_player_one):
     # self.puck.position = player.position
-    self.puck.ApplyForceToCenter(
-      Box2D.b2Vec2(math.cos(player.angle),
-                   math.sin(player.angle)) *
-      self.puck.mass / self.timeStep * SHOOTFORCEMULTIPLIER, True)
+    if is_player_one:
+      self.puck.ApplyForceToCenter(
+        Box2D.b2Vec2(math.cos(player.angle) * 1.0,
+                     math.sin(player.angle) * 1.0) *
+                     self.puck.mass / self.timeStep * SHOOTFORCEMULTIPLIER, True)
+    else:
+      self.puck.ApplyForceToCenter(
+        Box2D.b2Vec2(math.cos(player.angle) * -1.0,
+                     math.sin(player.angle) * -1.0) *
+                     self.puck.mass / self.timeStep * SHOOTFORCEMULTIPLIER, True)
+
+
 
   def discrete_to_continous_action(self, discrete_action):
     ''' converts discrete actions into continuous ones (for each player)
@@ -659,13 +664,13 @@ class HockeyEnv(gym.Env, EzPickle):
         self._keep_puck(self.player1)
         self.player1_has_puck -= 1
         if self.player1_has_puck == 1 or action[3] > 0.5:  # shooting
-          self._shoot(self.player1)
+          self._shoot(self.player1, True)
           self.player1_has_puck = 0
       if self.player2_has_puck > 1:
         self._keep_puck(self.player2)
         self.player2_has_puck -= 1
         if self.player2_has_puck == 1 or action[player2_idx + 3] > 0.5:  # shooting
-          self._shoot(self.player2)
+          self._shoot(self.player2, False)
           self.player2_has_puck = 0
 
     self.world.Step(self.timeStep, 6 * 30, 2 * 30)
