@@ -522,19 +522,19 @@ class HockeyEnv(gym.Env, EzPickle):
         r += 10
       else:  # opponent won
         r -= 10
-    return r
+    return float(r)
 
   # function that computes the reward returned to the agent, here with some reward shaping
   # the shaping should probably be removed in future versions
   def get_reward(self, info):
     r = self._compute_reward()
     r += info["reward_closeness_to_puck"]
-    return r
+    return float(r)
 
   def get_reward_agent_two(self, info_two):
     r = - self._compute_reward()
     r += info_two["reward_closeness_to_puck"]
-    return r
+    return float(r)
 
   def _get_info(self):
     # different proxy rewards:
@@ -685,6 +685,7 @@ class HockeyEnv(gym.Env, EzPickle):
     self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                     dist_positions(self.puck.position, (W, H / 2)))
     self.time += 1
+    # Todo: maybe use the truncation flag when the time runs out!
     return obs, reward, self.done, False, info
 
   def render(self, mode='human'):
