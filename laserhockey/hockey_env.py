@@ -557,9 +557,9 @@ class HockeyEnv(gym.Env, EzPickle):
     reward_puck_direction = self.puck.linearVelocity[0] * factor  # Puck flies right is good and left not
 
     return {"winner": self.winner,
-            "reward_closeness_to_puck": reward_closeness_to_puck,
-            "reward_touch_puck": reward_touch_puck,
-            "reward_puck_direction": reward_puck_direction,
+            "reward_closeness_to_puck": float(reward_closeness_to_puck),
+            "reward_touch_puck": float(reward_touch_puck),
+            "reward_puck_direction": float(reward_puck_direction),
             }
 
   def get_info_agent_two(self):
@@ -582,9 +582,9 @@ class HockeyEnv(gym.Env, EzPickle):
     reward_puck_direction = self.puck.linearVelocity[0] * factor  # Puck flies left is good and right not
 
     return {"winner": - self.winner,
-            "reward_closeness_to_puck": reward_closeness_to_puck,
-            "reward_touch_puck": reward_touch_puck,
-            "reward_puck_direction": reward_puck_direction,
+            "reward_closeness_to_puck": float(reward_closeness_to_puck),
+            "reward_touch_puck": float(reward_touch_puck),
+            "reward_puck_direction": float(reward_puck_direction),
             }
 
 
